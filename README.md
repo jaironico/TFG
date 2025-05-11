@@ -16,21 +16,23 @@ Asegúrate de tener Docker instalado en tu máquina. Puedes descargar Docker Des
 ## 📁 Paso 2: Clonar el repositorio
 
 ```bash
-git clone https://github.com/jaironico/TFG.git
-cd TFG
+git clone https://github.com/jaironico/tu-repo.git
+cd tu-repo
 ```
+
+_Reemplaza `tu-repo` con el nombre real de tu repositorio._
+
 ---
 
-## 🧱 Paso 3: Ejecutar con Docker Compose
+## ▶️ Paso 3: Ejecutar usando el script `.bat` (Windows)
+
+Puedes iniciar el entorno fácilmente ejecutando el archivo:
 
 ```bash
-docker-compose up -d
+start_project.bat
 ```
 
-Esto:
-
-- Descargará las imágenes desde Docker Hub (`jaironico/fastapi-backend` y `jaironico/react-frontend`)
-- Levantará los servicios en contenedores
+Esto ejecutará `docker-compose up -d` y te mostrará las URLs de acceso.
 
 ---
 
@@ -41,29 +43,23 @@ Esto:
 
 ---
 
-## 🛑 Paso 4: Parar los servicios
+## 🛑 Detener los servicios
 
 ```bash
 docker-compose down
 ```
 
-Esto detiene y elimina los contenedores levantados.
-
 ---
 
-## 🔍 Paso 5 (opcional): Ver logs
+## 🔍 Ver logs (opcional)
 
 ```bash
 docker-compose logs -f
 ```
 
-Esto muestra los logs en tiempo real de los contenedores.
-
 ---
 
-## 🔧 Paso 6 (opcional): Reconstruir las imágenes
-
-Si has hecho cambios en el código fuente:
+## 🔧 Reconstruir imágenes (opcional)
 
 ```bash
 docker-compose up --build
@@ -71,9 +67,7 @@ docker-compose up --build
 
 ---
 
-## 🧼 Limpieza (opcional)
-
-Para eliminar volúmenes, imágenes y todo:
+## 🧼 Limpieza total (opcional)
 
 ```bash
 docker system prune -a
