@@ -16,12 +16,9 @@ Asegúrate de tener Docker instalado en tu máquina. Puedes descargar Docker Des
 ## 📁 Paso 2: Clonar el repositorio
 
 ```bash
-git clone https://github.com/jaironico/tu-repo.git
-cd tu-repo
+git clone https://github.com/jaironico/TFG.git
+cd TFG
 ```
-
-_Reemplaza `tu-repo` con el nombre real de tu repositorio._
-
 ---
 
 ## ▶️ Paso 3: Ejecutar usando el script `.bat` (Windows)
@@ -76,6 +73,12 @@ docker system prune -a
 ⚠️ Esto elimina todo lo que no esté en uso. Úsalo con cuidado.
 
 ---
+
+# Para devs
+    docker build -t jaironico/fastapi-backend ./backend
+    docker push jaironico/fastapi-backend
+    docker build -t jaironico/react-frontend ./frontend
+    docker push jaironico/react-frontend
 
 ## 🧑‍💻 Autor
 
