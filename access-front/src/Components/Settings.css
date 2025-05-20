@@ -1,0 +1,35 @@
+.settings-container {
+  padding: 2rem;
+  max-width: 600px;
+  margin: 20px auto;
+  background: #7c7c7c;
+  border-radius: 8px;
+}
+
+.tabs {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.tabs button {
+  padding: 0.5rem 1rem;
+  border: none;
+  background-color: #000000;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.tabs button:hover {
+  background-color: #1c1c1c;
+}
+
+.tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.tab-content label {
+  font-weight: bold;
+}
