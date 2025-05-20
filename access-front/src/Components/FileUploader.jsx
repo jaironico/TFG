@@ -15,7 +15,7 @@ export function FileUploader({ onFileUpload }) {  // Asegúrate de recibir la pr
   return (
     <div {...getRootProps()}>
       <input {...getInputProps()} />
-      <p>Arrastra archivos aquí o haz clic</p>
+      <button>Seleccionar imagen</button>
     </div>
   );
 }
