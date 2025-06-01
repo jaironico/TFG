@@ -19,4 +19,3 @@ export function FileUploader({ onFileUpload }) {  // Asegúrate de recibir la pr
     </div>
   );
 }
-

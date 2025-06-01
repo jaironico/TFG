@@ -10,4 +10,3 @@ export async function extractText(file) {
     if (!response.ok) throw new Error("Error en el servidor");
     return await response.json();
   }
-  

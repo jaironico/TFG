@@ -1,11 +1,19 @@
+/* ---------------------------------------------------
+   Contenedor principal de Ajustes
+   --------------------------------------------------- */
 .settings-container {
   padding: 2rem;
   max-width: 600px;
   margin: 20px auto;
   background: #7c7c7c;
   border-radius: 8px;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
+/* ---------------------------------------------------
+   Tabulado (Lector de Pantalla / Texto Plano)
+   --------------------------------------------------- */
 .tabs {
   display: flex;
   gap: 1rem;
@@ -13,23 +21,169 @@
 }
 
 .tabs button {
+  flex: 1;
   padding: 0.5rem 1rem;
   border: none;
-  background-color: #000000;
+  background-color: #000;
   cursor: pointer;
   border-radius: 4px;
+  color: #fff;
+  font-weight: bold;
+  transition: background-color 0.2s ease;
 }
 
 .tabs button:hover {
-  background-color: #1c1c1c;
+  background-color: #1a1a1a;
 }
 
+.tabs button.active {
+  background-color: #444;
+}
+
+/* ---------------------------------------------------
+   Contenido de cada pestaña
+   --------------------------------------------------- */
 .tab-content {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
-.tab-content label {
+/* ---------------------------------------------------
+   Fila de control genérico:
+   - 120px para la etiqueta
+   - 1fr para el input principal
+   - 80px para entradas numéricas o botones
+   --------------------------------------------------- */
+.control-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 80px;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ---------------------------------------------------
+   Botones (Probar voz / Predeterminados) para "Lector"
+   --------------------------------------------------- */
+.buttons-row {
+  grid-template-columns: 120px auto auto;
+}
+
+/* ---------------------------------------------------
+   Fila de “Texto de prueba” en la pestaña Texto Plano
+   - 120px para la etiqueta
+   - 1fr para el bloque de visualización
+   --------------------------------------------------- */
+.sample-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: start;
+  gap: 0.5rem;
+}
+
+/* ---------------------------------------------------
+   Fila de botones “Predeterminados” en Texto Plano:
+   - Se deja la primera columna vacía (120px de ancho)
+   - La segunda columna ocupa todo el resto
+   --------------------------------------------------- */
+.text-buttons-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ---------------------------------------------------
+   Botones de acción generales (Probar voz / Predeterminados / Guardar)
+   --------------------------------------------------- */
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;   /* Botón un poco más grande */
+  font-size: 1rem;
+  background-color: #2c3e50;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.2s ease;
+}
+
+.action-btn:hover {
+  background-color: #1a252f;
+}
+
+/* ---------------------------------------------------
+   Botón “Predeterminados” en Texto Plano: ancho mínimo mayor
+   --------------------------------------------------- */
+.text-btn-wide {
+  min-width: 150px;
+}
+
+/* ---------------------------------------------------
+   Bloque que muestra el “Texto de prueba”
+   --------------------------------------------------- */
+.sample-text {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #000;
+  line-height: 1.4;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+/* ---------------------------------------------------
+   Controles “estrechos” en Texto Plano
+   --------------------------------------------------- */
+.narrow-input {
+  width: 80px;
+}
+
+/* ---------------------------------------------------
+   Etiquetas de cada fila
+   --------------------------------------------------- */
+label {
   font-weight: bold;
+  color: #fff;
+}
+
+/* ---------------------------------------------------
+   Mensaje de éxito/confirmación (opcional, si lo muestras aquí)
+   --------------------------------------------------- */
+.save-message {
+  text-align: center;
+  margin-top: 0.5rem;
+  color: #b5e7a0; /* Verde claro para mensaje de éxito */
+  font-size: 0.95rem;
+}
+
+/* ---------------------------------------------------
+   Fila donde aparece el botón “Guardar” centrado
+   --------------------------------------------------- */
+.save-row {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+/* ---------------------------------------------------
+   Botón “Guardar” en verde
+   --------------------------------------------------- */
+.save-btn {
+  background-color: #388e3c;  /* Verde oscuro */
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-size: 1rem;
+}
+
+.save-btn:hover {
+  background-color: #2e7d32;  /* Verde aún más oscuro al pasar ratón */
 }

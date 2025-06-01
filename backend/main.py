@@ -1,29 +1,46 @@
-from fastapi import FastAPI, UploadFile, HTTPException
+# main.py
+
+import os
+import logging
+import hashlib
+from datetime import datetime, timedelta
+from io import BytesIO
+from typing import Dict, Optional, Tuple
+
+from fastapi import FastAPI, UploadFile, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from PIL import Image
 import magic
 import pytesseract
-from io import BytesIO
-from PIL import Image
 import google.generativeai as genai
-import logging
-from functools import lru_cache
-import os
-from typing import Dict, Optional, Tuple
+from dotenv import load_dotenv
 from pydantic import BaseModel
-from datetime import datetime, timedelta
-import hashlib
 
-# Configuración inicial
+# Importaciones para la parte de usuarios / ajustes
+from database import engine, SessionLocal
+import models, schemas
+from auth import router as auth_router, get_current_user, get_db
+
+# --------------------------------------------------
+# Cargar configuración desde .env
+# --------------------------------------------------
+load_dotenv()
+
+# --------------------------------------------------
+# Configuración inicial de FastAPI y logging
+# --------------------------------------------------
 app = FastAPI(
-    title="TFG Document Processor",
-    description="API para procesamiento de documentos con OCR, corrección y descripción de imágenes mediante Gemini"
+    title="TFG Document Processor con Usuarios",
+    description="API para procesamiento de documentos con OCR, corrección y descripción de imágenes mediante Gemini, + autenticación y ajustes por usuario"
 )
 
-# Configuración de logs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Modelos para solicitudes
+# --------------------------------------------------
+# Modelos para solicitudes OCR / texto
+# --------------------------------------------------
 class TextRequest(BaseModel):
     text: str
     force_correction: Optional[bool] = False
@@ -31,302 +48,320 @@ class TextRequest(BaseModel):
 class ImageDescriptionRequest(BaseModel):
     image_hash: str
 
+# --------------------------------------------------
 # Configuración de Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = "gemini-1.5-flash"
-GEMINI_VISION_MODEL = "gemini-pro-vision"
+# --------------------------------------------------
+GEMINI_API_KEY       = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL         = "gemini-1.5-flash"
+GEMINI_VISION_MODEL  = "gemini-pro-vision"
 
-# Estado global para manejo de cuotas
+# Estado para manejar errores y cuotas de Gemini
 class APIStatus:
     def __init__(self):
-        self.last_error = None
-        self.error_count = 0
+        self.last_error   = None
+        self.error_count  = 0
         self.last_success = datetime.now()
-        
+
     def report_error(self, error):
-        self.last_error = error
+        self.last_error  = error
         self.error_count += 1
-        
+
     def report_success(self):
         self.last_success = datetime.now()
-        self.error_count = 0
-        
+        self.error_count  = 0
+
     def is_likely_quota_exceeded(self):
-        return (self.error_count > 3 and 
-                "quota" in str(self.last_error).lower() or
-                "API_KEY_INVALID" in str(self.last_error))
+        if self.error_count <= 3:
+            return False
+        msg = str(self.last_error).lower() if self.last_error else ""
+        return "quota" in msg or "api_key_invalid" in msg
 
 api_status = APIStatus()
 
+# Intento de configurar Gemini (API key en .env)
 try:
     if not GEMINI_API_KEY:
         raise ValueError("No se encontró GEMINI_API_KEY en variables de entorno")
-    
     genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel(GEMINI_MODEL)
+    gemini_model        = genai.GenerativeModel(GEMINI_MODEL)
     gemini_vision_model = genai.GenerativeModel(GEMINI_VISION_MODEL)
     logger.info(f"Conexión con Gemini establecida (Modelos: {GEMINI_MODEL}, {GEMINI_VISION_MODEL})")
 except Exception as e:
-    logger.warning(f"Error configurando Gemini: {str(e)}")
+    logger.warning(f"Error configurando Gemini: {e}")
     gemini_model = None
     gemini_vision_model = None
     api_status.report_error(e)
 
-# Configuración CORS
+# --------------------------------------------------
+# CORS
+# --------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # En producción, restringe al dominio de tu frontend
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Caché mejorado con tiempo de expiración
+# --------------------------------------------------
+# Conectar y crear tablas de la base de datos
+# --------------------------------------------------
+models.Base.metadata.create_all(bind=engine)
+
+# --------------------------------------------------
+# Caché con TTL (para correcciones y descripciones)
+# --------------------------------------------------
 class TimedCache:
     def __init__(self, maxsize=100, ttl=timedelta(hours=1)):
-        self.cache = {}
+        self.cache   = {}
         self.maxsize = maxsize
-        self.ttl = ttl
-        
+        self.ttl     = ttl
+
     def get(self, key):
         if key not in self.cache:
             return None
-            
-        value, timestamp = self.cache[key]
-        if datetime.now() - timestamp > self.ttl:
+        value, ts = self.cache[key]
+        if datetime.now() - ts > self.ttl:
             del self.cache[key]
             return None
-            
         return value
-        
+
     def set(self, key, value):
         if len(self.cache) >= self.maxsize:
-            oldest_key = next(iter(self.cache))
-            del self.cache[oldest_key]
-            
+            oldest = next(iter(self.cache))
+            del self.cache[oldest]
         self.cache[key] = (value, datetime.now())
 
-# Cachés para diferentes propósitos
-correction_cache = TimedCache(maxsize=200, ttl=timedelta(hours=6))
+correction_cache  = TimedCache(maxsize=200, ttl=timedelta(hours=6))
 description_cache = TimedCache(maxsize=100, ttl=timedelta(hours=24))
 
 def get_cache_key(text: str) -> str:
     return hashlib.md5(text.encode()).hexdigest()
 
 def apply_basic_corrections(text: str) -> str:
-    """Correcciones básicas sin depender de Gemini"""
     corrections = {
         "  ": " ",
         "\n\n\n": "\n\n",
-        # Añade más reglas según necesites
     }
     for wrong, right in corrections.items():
         text = text.replace(wrong, right)
     return text
 
+# --------------------------------------------------
+# Funciones de corrección con Gemini
+# --------------------------------------------------
+async def correct_with_gemini(text: str) -> Tuple[str, bool]:
+    key = get_cache_key(text)
+    cached = correction_cache.get(key)
+    if cached:
+        return cached, True
+
+    if not gemini_model or api_status.is_likely_quota_exceeded():
+        return apply_basic_corrections(text), False
+
+    try:
+        prompt = (
+            "Corrige ortografía y gramática manteniendo:\n"
+            "- Estructura original\n"
+            "- Términos técnicos\n"
+            "Devuelve SOLO el texto corregido:\n\n"
+            f"{text[:15000]}"
+        )
+        resp = gemini_model.generate_content(prompt)
+        corrected = resp.text or text
+        correction_cache.set(key, corrected)
+        api_status.report_success()
+        return corrected, True
+    except Exception as e:
+        logger.error(f"Error en Gemini: {e}")
+        api_status.report_error(e)
+        return apply_basic_corrections(text), False
+
+# --------------------------------------------------
+# Funciones de descripción de imagen con Gemini
+# --------------------------------------------------
 async def describe_image(image_bytes: bytes) -> Tuple[str, bool]:
-    """Describe una imagen usando Gemini con caché"""
     image_hash = hashlib.md5(image_bytes).hexdigest()
     cached = description_cache.get(image_hash)
     if cached:
         return cached, True
-        
+
     if not gemini_vision_model or api_status.is_likely_quota_exceeded():
         return "Descripción no disponible (límite de API alcanzado)", False
-        
+
     try:
-        image = Image.open(BytesIO(image_bytes))
-        response = gemini_vision_model.generate_content([
-            "Describe esta imagen en detalle, incluyendo texto relevante y contexto. "
-            "Sé preciso y conciso.",
-            image
+        img = Image.open(BytesIO(image_bytes))
+        resp = gemini_vision_model.generate_content([
+            "Describe esta imagen en detalle, incluyendo texto relevante y contexto. Sé preciso y conciso.",
+            img
         ])
-        description = response.text if response.text else "No se pudo generar descripción"
-        description_cache.set(image_hash, description)
+        desc = resp.text or "No se pudo generar descripción"
+        description_cache.set(image_hash, desc)
         api_status.report_success()
-        return description, True
+        return desc, True
     except Exception as e:
-        logger.error(f"Error describiendo imagen: {str(e)}")
+        logger.error(f"Error describiendo imagen: {e}")
         api_status.report_error(e)
-        return f"Error generando descripción: {str(e)}", False
+        return f"Error generando descripción: {e}", False
 
-async def correct_with_gemini(text: str) -> Tuple[str, bool]:
-    """Corrige texto usando Gemini con caché y manejo de errores"""
-    cache_key = get_cache_key(text)
-    cached = correction_cache.get(cache_key)
-    if cached:
-        return cached, True
-        
-    if not gemini_model or api_status.is_likely_quota_exceeded():
-        return apply_basic_corrections(text), False
-        
-    try:
-        prompt = (
-            "Corrige ortografía y gramática manteniendo:\n"
-            "- Estructura original\n- Términos técnicos\n"
-            "Devuelve SOLO el texto corregido:\n\n"
-            f"{text[:15000]}"  # Límite por seguridad
-        )
-        response = gemini_model.generate_content(prompt)
-        corrected = response.text if response.text else text
-        correction_cache.set(cache_key, corrected)
-        api_status.report_success()
-        return corrected, True
-    except Exception as e:
-        logger.error(f"Error en Gemini: {str(e)}")
-        api_status.report_error(e)
-        return apply_basic_corrections(text), False
-
+# --------------------------------------------------
+# Lógica de procesamiento de imágenes subidas
+# --------------------------------------------------
 async def process_image(file: UploadFile) -> Dict[str, str]:
-    """Procesa imagen con OCR y descripción"""
-    try:
-        image_data = await file.read()
-        image = Image.open(BytesIO(image_data))
-        
-        # OCR
-        custom_config = r'--oem 3 --psm 6 -l spa+eng'
-        text = pytesseract.image_to_string(image, config=custom_config).strip()
-        
-        if not text:
-            raise ValueError("OCR no detectó texto")
-            
-        logger.info(f"OCR completado. Longitud: {len(text)} caracteres")
-        
-        # Corrección
-        corrected_text, used_gemini = await correct_with_gemini(text)
-        
-        # Descripción
-        description, _ = await describe_image(image_data)
-        
-        return {
-            "original_text": text,
-            "corrected_text": corrected_text,
-            "description": description,
-            "correction_source": "gemini" if used_gemini else "basic",
-            "warnings": [] if used_gemini else ["Límite de Gemini alcanzado. Usando correcciones básicas."]
-        }
-    except Exception as e:
-        logger.error(f"Error procesando imagen: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    data = await file.read()
+    img  = Image.open(BytesIO(data))
 
+    # OCR con Tesseract (español + inglés)
+    custom_cfg = r'--oem 3 --psm 6 -l spa+eng'
+    text = pytesseract.image_to_string(img, config=custom_cfg).strip()
+    if not text:
+        raise ValueError("OCR no detectó texto")
+
+    logger.info(f"OCR completado: {len(text)} caracteres")
+
+    # Corrección + descripción
+    corrected, used_g = await correct_with_gemini(text)
+    desc, _      = await describe_image(data)
+
+    return {
+        "original_text":    text,
+        "corrected_text":   corrected,
+        "description":      desc,
+        "correction_source": "gemini" if used_g else "basic",
+        "warnings":         [] if used_g else ["Usando correcciones básicas (sin Gemini)"]
+    }
+
+# --------------------------------------------------
+# Rutas para OCR / corrección / descripción
+# --------------------------------------------------
 @app.post("/upload")
 async def upload_file(file: UploadFile):
-    """Endpoint principal para subida de archivos"""
-    try:
-        # Verificar tipo de archivo
-        file_header = await file.read(1024)
-        await file.seek(0)
-        
-        mime_type = magic.from_buffer(file_header, mime=True)
-        logger.info(f"Tipo MIME detectado: {mime_type}")
+    header = await file.read(1024)
+    await file.seek(0)
+    mime = magic.from_buffer(header, mime=True)
+    if not mime.startswith("image/"):
+        raise HTTPException(400, "Solo se admiten imágenes (PNG/JPG/JPEG)")
 
-        if not mime_type.startswith("image/"):
-            raise HTTPException(
-                status_code=400,
-                detail="Solo se admiten imágenes (PNG/JPG/JPEG)"
-            )
-
-        result = await process_image(file)
-        
-        # Mensaje sobre estado de la API
-        if api_status.is_likely_quota_exceeded():
-            result["warnings"].append(
-                "Límite de cuota de Gemini alcanzado. "
-                "Algunas funciones pueden estar limitadas."
-            )
-        
-        return {
-            "status": "success",
-            "type": "image",
-            **result
-        }
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error inesperado: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Error interno del servidor"
-        )
+    res = await process_image(file)
+    if api_status.is_likely_quota_exceeded():
+        res["warnings"].append("Límite de cuota de Gemini alcanzado")
+    return {"status": "success", "type": "image", **res}
 
 @app.post("/verify-text")
-async def verify_text(request: TextRequest):
-    """Verifica y corrige texto existente"""
-    try:
-        if not request.text.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="El texto no puede estar vacío"
-            )
-
-        corrected_text, used_gemini = await correct_with_gemini(request.text)
-        
-        response = {
-            "status": "success",
-            "original_text": request.text,
-            "corrected_text": corrected_text,
-            "correction_source": "gemini" if used_gemini else "basic"
-        }
-        
-        if not used_gemini:
-            response["warning"] = "Límite de Gemini alcanzado. Usando correcciones básicas."
-        
-        if api_status.is_likely_quota_exceeded():
-            response["warning"] = (
-                "Límite de cuota de Gemini alcanzado. "
-                "Calidad de corrección puede estar afectada."
-            )
-        
-        return response
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error en verificación: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Error al verificar el texto"
-        )
+async def verify_text(req: TextRequest):
+    if not req.text.strip():
+        raise HTTPException(400, "El texto no puede estar vacío")
+    corrected, used = await correct_with_gemini(req.text)
+    resp = {
+        "status": "success",
+        "original_text": req.text,
+        "corrected_text": corrected,
+        "correction_source": "gemini" if used else "basic"
+    }
+    if not used:
+        resp["warning"] = "Usando correcciones básicas (sin Gemini)"
+    return resp
 
 @app.post("/describe-image")
 async def describe_image_endpoint(file: UploadFile):
-    """Endpoint solo para descripción de imágenes"""
-    try:
-        image_data = await file.read()
-        description, used_gemini = await describe_image(image_data)
-        
-        response = {
-            "status": "success",
-            "description": description,
-            "source": "gemini" if used_gemini else "fallback"
-        }
-        
-        if not used_gemini:
-            response["warning"] = "Límite de Gemini alcanzado. Descripción limitada."
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error describiendo imagen: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Error generando descripción"
-        )
+    data = await file.read()
+    description, used = await describe_image(data)
+    resp = {
+        "status":      "success",
+        "description": description,
+        "source":      "gemini" if used else "fallback"
+    }
+    if not used:
+        resp["warning"] = "Descripción limitada (sin Gemini)"
+    return resp
 
 @app.get("/api-status")
 async def get_api_status():
-    """Endpoint para verificar estado de la API"""
     return {
-        "gemini_available": gemini_model is not None,
-        "last_error": str(api_status.last_error) if api_status.last_error else None,
-        "error_count": api_status.error_count,
+        "gemini_available":      gemini_model is not None,
+        "last_error":            str(api_status.last_error) if api_status.last_error else None,
+        "error_count":           api_status.error_count,
         "likely_quota_exceeded": api_status.is_likely_quota_exceeded(),
         "cache_stats": {
-            "correction_cache_size": len(correction_cache.cache),
+            "correction_cache_size":  len(correction_cache.cache),
             "description_cache_size": len(description_cache.cache)
         }
     }
 
+# --------------------------------------------------
+# Montar router de autenticación (registro/login)
+# --------------------------------------------------
+app.include_router(auth_router)
+
+
+# --------------------------------------------------
+# Rutas protegidas para leer/actualizar ajustes
+# --------------------------------------------------
+
+@app.get("/me/settings", response_model=schemas.UserSettingsOut)
+def read_my_settings(
+    current_user: models.User = Depends(get_current_user),
+    db: Session                = Depends(get_db)
+):
+    settings = (
+        db.query(models.UserSettings)
+          .filter(models.UserSettings.user_id == current_user.id)
+          .first()
+    )
+    if not settings:
+        raise HTTPException(status_code=404, detail="No se encontraron ajustes para este usuario")
+    return settings
+
+@app.put("/me/settings", response_model=schemas.UserSettingsOut)
+def update_my_settings(
+    settings_in: schemas.UserSettingsUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session                = Depends(get_db)
+):
+    settings = (
+        db.query(models.UserSettings)
+          .filter(models.UserSettings.user_id == current_user.id)
+          .first()
+    )
+    if not settings:
+        # Si no existía, creamos uno nuevo
+        settings = models.UserSettings(
+            user_id=current_user.id,
+            font_size=settings_in.font_size,
+            font_family=settings_in.font_family,
+            text_color=settings_in.text_color,
+            background_color=settings_in.background_color,
+            rate=settings_in.rate,
+            pitch=settings_in.pitch,
+        )
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+        return settings
+
+    # Si ya existía, actualizamos
+    settings.font_size         = settings_in.font_size
+    settings.font_family       = settings_in.font_family
+    settings.text_color        = settings_in.text_color
+    settings.background_color  = settings_in.background_color
+    settings.rate              = settings_in.rate
+    settings.pitch             = settings_in.pitch
+
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+# --------------------------------------------------
+# Endpoint de prueba
+# --------------------------------------------------
+@app.get("/")
+def read_root():
+    return {"message": "¡API corriendo correctamente!"}
+
+
+# --------------------------------------------------
+# Levantar el servidor
+# --------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
