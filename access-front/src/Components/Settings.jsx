@@ -1,19 +1,24 @@
 // src/Components/Settings.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import "./Settings.css";
 
 export default function Settings({
+  initialReaderSettings,    // NUEVA prop: valores actuales del lector
+  initialTextSettings,      // NUEVA prop: valores actuales del texto
   onReaderSettingsChange,
   onTextSettingsChange,
   onSave
 }) {
+  // Controla qué pestaña está activa
   const [activeTab, setActiveTab] = useState("reader");
 
+  // Estado interno para Lector de Pantalla, se inicializa desde la prop
   const [readerSettings, setReaderSettings] = useState({
     rate: 1,
     pitch: 1
   });
 
+  // Estado interno para Texto Plano, se inicializa desde la prop
   const [textSettings, setTextSettings] = useState({
     fontSize: "16",
     fontFamily: "Arial",
@@ -21,16 +26,38 @@ export default function Settings({
     backgroundColor: "#ffffff"
   });
 
-  // Detiene cualquier lectura activa
+  // Cada vez que cambian las props initial*, sincronizamos el estado interno
+  useEffect(() => {
+    if (initialReaderSettings) {
+      setReaderSettings({
+        rate: initialReaderSettings.rate,
+        pitch: initialReaderSettings.pitch
+      });
+    }
+  }, [initialReaderSettings]);
+
+  useEffect(() => {
+    if (initialTextSettings) {
+      setTextSettings({
+        fontSize: initialTextSettings.fontSize,
+        fontFamily: initialTextSettings.fontFamily,
+        textColor: initialTextSettings.textColor,
+        backgroundColor: initialTextSettings.backgroundColor
+      });
+    }
+  }, [initialTextSettings]);
+
+  // Detiene cualquier lectura activa de voz
   const stopSpeaking = () => {
     if (window.speechSynthesis && window.speechSynthesis.speaking) {
       window.speechSynthesis.cancel();
     }
   };
 
-  // Clamp para rate y pitch
+  // Función auxiliar para limitar valores
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
+  // Maneja cambios en rate / pitch
   const handleReaderChange = (e) => {
     stopSpeaking();
     const { name, value: raw } = e.target;
@@ -46,11 +73,13 @@ export default function Settings({
     onReaderSettingsChange(next);
   };
 
+  // Maneja cambios en controles de texto (tamaño, fuente, color, fondo)
   const handleTextChange = (e) => {
     stopSpeaking();
     const { name, value } = e.target;
     const next = { ...textSettings, [name]: value };
     setTextSettings(next);
+    // Le pasamos a App.jsx el tamaño con "px"
     onTextSettingsChange({
       fontSize: `${next.fontSize}px`,
       fontFamily: next.fontFamily,
@@ -59,6 +88,7 @@ export default function Settings({
     });
   };
 
+  // Prueba de voz con los valores actuales
   const testVoice = () => {
     stopSpeaking();
     if (!window.speechSynthesis) {
@@ -74,6 +104,7 @@ export default function Settings({
     window.speechSynthesis.speak(utterance);
   };
 
+  // Restaurar lector a valores por defecto
   const resetReaderDefaults = () => {
     stopSpeaking();
     const defaults = { rate: 1, pitch: 1 };
@@ -81,6 +112,7 @@ export default function Settings({
     onReaderSettingsChange(defaults);
   };
 
+  // Restaurar texto a valores por defecto
   const resetTextDefaults = () => {
     stopSpeaking();
     const defaults = {
@@ -267,10 +299,7 @@ export default function Settings({
 
       {/* Botón "Guardar" */}
       <div className="save-row">
-        <button
-          onClick={() => onSave(readerSettings, textSettings)}
-          className="action-btn save-btn"
-        >
+        <button onClick={() => onSave(readerSettings, textSettings)} className="action-btn save-btn">
           💾 Guardar
         </button>
       </div>

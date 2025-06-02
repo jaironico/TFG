@@ -33,6 +33,9 @@ function App() {
     error: null
   });
 
+  // Para mostrar la imagen original
+  const [originalImageURL, setOriginalImageURL] = useState(null);
+
   // Mostrar/Ocultar ajustes
   const [showSettings, setShowSettings] = useState(false);
 
@@ -56,13 +59,11 @@ function App() {
   }, []);
 
   const handleLogout = () => {
-    // Confirmación antes de cerrar sesión
     const confirmLogout = window.confirm('¿Estás seguro de que quieres cerrar sesión?');
     if (!confirmLogout) return;
 
     localStorage.removeItem('token');
     setToken(null);
-    // Reiniciar ajustes a defecto si lo deseas
     setReaderSettings({ rate: 1, pitch: 1, voice: 'default' });
     setTextSettings({
       fontSize: '16px',
@@ -70,6 +71,7 @@ function App() {
       textColor: '#333333',
       backgroundColor: '#ffffff'
     });
+    setOriginalImageURL(null);
   };
 
   const login = async (username, password) => {
@@ -110,8 +112,6 @@ function App() {
 
       if (!res.ok) {
         const data = await res.json();
-
-        // Si es un error de validación (422), extraemos todos los mensajes
         if (res.status === 422 && Array.isArray(data.detail)) {
           const messages = data.detail
             .map(err => {
@@ -131,12 +131,9 @@ function App() {
             .join('\n');
           throw new Error(messages);
         }
-
-        // Otro tipo de error
         throw new Error(data.detail || 'Error al registrar usuario');
       }
 
-      // Registro exitoso → iniciar sesión automáticamente
       await login(username, password);
     } catch (err) {
       setAuthError(err.message);
@@ -197,7 +194,6 @@ function App() {
         throw new Error('Error al guardar ajustes');
       }
 
-      // Mostrar mensaje de éxito brevemente
       setSaveMessage('Ajustes guardados');
       setTimeout(() => setSaveMessage(''), 3000);
     } catch (err) {
@@ -208,6 +204,7 @@ function App() {
   };
 
   const handleUpload = async (file) => {
+    setOriginalImageURL(URL.createObjectURL(file));
     setDocumentState({
       text: '',
       isCorrected: false,
@@ -243,7 +240,6 @@ function App() {
     }
   };
 
-  // Si no hay token, mostramos login o registro
   if (!token) {
     return authMode === 'login' ? (
       <Login
@@ -266,95 +262,118 @@ function App() {
     );
   }
 
-  // Si hay token, mostramos la app principal
   return (
-    <div style={styles.app}>
-      <h1 style={styles.title}>Editor de Documentos con IA</h1>
+    <div style={styles.outerContainer}>
+      <div style={styles.app}>
+        <h1 style={styles.title}>Editor de Documentos con IA</h1>
 
-      <div style={styles.topBar}>
-        <button
-          onClick={() => setShowSettings(v => !v)}
-          style={styles.ajustesButton}
-          aria-expanded={showSettings}
-        >
-          Ajustes
-        </button>
-        <button
-          onClick={handleLogout}
-          style={styles.logoutButton}
-        >
-          Cerrar Sesión
-        </button>
-      </div>
-
-      {showSettings && (
-        <div>
-          <Settings
-            onReaderSettingsChange={readerNew => {
-              setReaderSettings(readerNew);
-              // no guardamos automáticamente aquí
-            }}
-            onTextSettingsChange={textNew => {
-              setTextSettings(textNew);
-              // no guardamos automáticamente aquí
-            }}
-            onSave={() => saveSettingsToServer(readerSettings, textSettings)}
-          />
-          {saveMessage && (
-            <div style={styles.saveMessage}>{saveMessage}</div>
-          )}
+        <div style={styles.topBar}>
+          <button
+            onClick={() => setShowSettings(v => !v)}
+            style={styles.ajustesButton}
+            aria-expanded={showSettings}
+          >
+            Ajustes
+          </button>
+          <button
+            onClick={handleLogout}
+            style={styles.logoutButton}
+          >
+            Cerrar Sesión
+          </button>
         </div>
-      )}
 
-      <FileUploader
-        onFileUpload={handleUpload}
-        disabled={documentState.isLoading}
-      />
+        {showSettings && (
+          <div>
+            <Settings
+              initialReaderSettings={readerSettings}
+              initialTextSettings={{
+                fontSize: textSettings.fontSize.replace('px', ''),
+                fontFamily: textSettings.fontFamily,
+                textColor: textSettings.textColor,
+                backgroundColor: textSettings.backgroundColor
+              }}
+              onReaderSettingsChange={readerNew => {
+                setReaderSettings(readerNew);
+              }}
+              onTextSettingsChange={textNew => {
+                setTextSettings(textNew);
+              }}
+              onSave={() => saveSettingsToServer(readerSettings, textSettings)}
+            />
+            {saveMessage && (
+              <div style={styles.saveMessage}>{saveMessage}</div>
+            )}
+          </div>
+        )}
 
-      {documentState.isLoading && (
-        <div style={styles.messageBox} role="status" aria-live="polite">
-          <p>Procesando documento...</p>
-        </div>
-      )}
+        <FileUploader
+          onFileUpload={handleUpload}
+          disabled={documentState.isLoading}
+        />
 
-      {documentState.error && (
-        <div style={{ ...styles.messageBox, backgroundColor: '#ffebee' }} role="alert">
-          <p>Error: {documentState.error}</p>
-        </div>
-      )}
-
-      {documentState.text && (
-        <div style={styles.documentContainer}>
-          {documentState.correctionAttempted && !documentState.isCorrected && (
-            <div style={{ ...styles.messageBox, backgroundColor: '#fff8e1' }} role="alert">
-              <p>✋ Esta es una versión sin revisar, podría contener errores</p>
-            </div>
-          )}
-
-          <TextEditor
-            text={documentState.text}
-            readOnly={documentState.isLoading}
-            textSettings={textSettings}
-          />
-
-          <div style={styles.controls}>
-            <VoiceReader
-              text={documentState.text}
-              readerSettings={readerSettings}
+        {originalImageURL && (
+          <div style={styles.imagePreviewContainer}>
+            <p>Imagen original:</p>
+            <img
+              src={originalImageURL}
+              alt="Original subida"
+              style={styles.imagePreview}
             />
           </div>
-        </div>
-      )}
+        )}
+
+        {documentState.isLoading && (
+          <div style={styles.messageBox} role="status" aria-live="polite">
+            <p>Procesando documento...</p>
+          </div>
+        )}
+
+        {documentState.error && (
+          <div style={{ ...styles.messageBox, backgroundColor: '#ffebee' }} role="alert">
+            <p>Error: {documentState.error}</p>
+          </div>
+        )}
+
+        {documentState.text && (
+          <div style={styles.documentContainer}>
+            {documentState.correctionAttempted && !documentState.isCorrected && (
+              <div style={{ ...styles.messageBox, backgroundColor: '#fff8e1' }} role="alert">
+                <p>✋ Esta es una versión sin revisar, podría contener errores</p>
+              </div>
+            )}
+
+            <TextEditor
+              text={documentState.text}
+              readOnly={documentState.isLoading}
+              textSettings={textSettings}
+            />
+
+            <div style={styles.controls}>
+              <VoiceReader
+                text={documentState.text}
+                readerSettings={readerSettings}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 const styles = {
+  outerContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    paddingTop: '20px'
+  },
   app: {
+    width: '100%',
     maxWidth: '800px',
-    margin: '0 auto',
     padding: '20px',
-    fontFamily: 'Arial, sans-serif'
+    fontFamily: 'Arial, sans-serif',
+    boxSizing: 'border-box'
   },
   title: {
     textAlign: 'center',
@@ -399,8 +418,18 @@ const styles = {
   saveMessage: {
     marginTop: '10px',
     textAlign: 'center',
-    color: '#388e3c', // verde
+    color: '#388e3c',
     fontWeight: 'bold'
+  },
+  imagePreviewContainer: {
+    textAlign: 'center',
+    marginTop: '20px'
+  },
+  imagePreview: {
+    maxWidth: '100%',
+    height: 'auto',
+    borderRadius: '4px',
+    border: '1px solid #ccc'
   }
 };
 
