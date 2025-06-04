@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Dict, Optional, Tuple
 
-from fastapi import FastAPI, UploadFile, HTTPException, Depends, status
+from fastapi import FastAPI, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from PIL import Image
@@ -49,11 +49,11 @@ class ImageDescriptionRequest(BaseModel):
     image_hash: str
 
 # --------------------------------------------------
-# Configuración de Gemini
+# Configuración de Gemini (texto + visión multimodal)
 # --------------------------------------------------
 GEMINI_API_KEY       = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL         = "gemini-1.5-flash"
-GEMINI_VISION_MODEL  = "gemini-pro-vision"
+GEMINI_VISION_MODEL  = "gemini-1.5-flash"  # mismo modelo para visión
 
 # Estado para manejar errores y cuotas de Gemini
 class APIStatus:
@@ -78,14 +78,16 @@ class APIStatus:
 
 api_status = APIStatus()
 
-# Intento de configurar Gemini (API key en .env)
+# Intento de configurar Gemini
 try:
     if not GEMINI_API_KEY:
         raise ValueError("No se encontró GEMINI_API_KEY en variables de entorno")
     genai.configure(api_key=GEMINI_API_KEY)
     gemini_model        = genai.GenerativeModel(GEMINI_MODEL)
     gemini_vision_model = genai.GenerativeModel(GEMINI_VISION_MODEL)
-    logger.info(f"Conexión con Gemini establecida (Modelos: {GEMINI_MODEL}, {GEMINI_VISION_MODEL})")
+    logger.info(f"Conexión con Gemini establecida (Modelos: {GEMINI_MODEL})")
+
+
 except Exception as e:
     logger.warning(f"Error configurando Gemini: {e}")
     gemini_model = None
@@ -160,24 +162,34 @@ async def correct_with_gemini(text: str) -> Tuple[str, bool]:
 
     try:
         prompt = (
-            "Corrige ortografía y gramática manteniendo:\n"
-            "- Estructura original\n"
-            "- Términos técnicos\n"
-            "Devuelve SOLO el texto corregido:\n\n"
+            "Primero, decide si este texto es legible. "
+            "Si no es legible (ruido o caracteres sin sentido), "
+            "responde EXACTAMENTE \"True\" (sin comillas). "
+            "En caso contrario, corrige ortografía y gramática "
+            "manteniendo la estructura, términos técnicos e idioma. "
+            "Devuelve SOLO el texto corregido o la palabra True.\n\n"
             f"{text[:15000]}"
         )
         resp = gemini_model.generate_content(prompt)
-        corrected = resp.text or text
+        result = resp.text.strip() if resp.text else ""
+
+        if result.lower() == "true":
+            correction_cache.set(key, "True")
+            api_status.report_success()
+            return "True", True
+
+        corrected = result
         correction_cache.set(key, corrected)
         api_status.report_success()
         return corrected, True
+
     except Exception as e:
-        logger.error(f"Error en Gemini: {e}")
+        logger.error(f"Error en Gemini (texto): {e}")
         api_status.report_error(e)
         return apply_basic_corrections(text), False
 
 # --------------------------------------------------
-# Funciones de descripción de imagen con Gemini
+# Funciones de descripción de imagen con Gemini (multimodal)
 # --------------------------------------------------
 async def describe_image(image_bytes: bytes) -> Tuple[str, bool]:
     image_hash = hashlib.md5(image_bytes).hexdigest()
@@ -190,18 +202,17 @@ async def describe_image(image_bytes: bytes) -> Tuple[str, bool]:
 
     try:
         img = Image.open(BytesIO(image_bytes))
-        resp = gemini_vision_model.generate_content([
-            "Describe esta imagen en detalle, incluyendo texto relevante y contexto. Sé preciso y conciso.",
-            img
-        ])
+        prompt = "SOLO responde con la descripción de esta imagen en detalle, incluyendo texto relevante y contexto. Sé preciso y conciso."
+        resp = gemini_vision_model.generate_content([prompt, img])
         desc = resp.text or "No se pudo generar descripción"
         description_cache.set(image_hash, desc)
         api_status.report_success()
         return desc, True
+
     except Exception as e:
-        logger.error(f"Error describiendo imagen: {e}")
+        logger.error(f"Error describiendo imagen (vision): {e}")
         api_status.report_error(e)
-        return f"Error generando descripción: {e}", False
+        return "Error generando descripción", False
 
 # --------------------------------------------------
 # Lógica de procesamiento de imágenes subidas
@@ -210,7 +221,7 @@ async def process_image(file: UploadFile) -> Dict[str, str]:
     data = await file.read()
     img  = Image.open(BytesIO(data))
 
-    # OCR con Tesseract (español + inglés)
+    # Paso 1: OCR con Tesseract (español + inglés)
     custom_cfg = r'--oem 3 --psm 6 -l spa+eng'
     text = pytesseract.image_to_string(img, config=custom_cfg).strip()
     if not text:
@@ -218,16 +229,30 @@ async def process_image(file: UploadFile) -> Dict[str, str]:
 
     logger.info(f"OCR completado: {len(text)} caracteres")
 
-    # Corrección + descripción
+    # Paso 2: Corrección / detección "sin texto"
     corrected, used_g = await correct_with_gemini(text)
-    desc, _      = await describe_image(data)
 
+    # Si Gemini devolvió "True" → no hay texto legible
+    if corrected == "True":
+        desc, vision_used = await describe_image(data)
+        return {
+            "original_text":     "",
+            "corrected_text":    "",
+            "description":       desc,
+            "correction_source": "none (sin texto)",
+            "vision_source":     "gemini-1.5-flash" if vision_used else "fallback",
+            "warnings":          [] if vision_used else ["Descripción limitada (sin Gemini Vision)"]
+        }
+
+    # Si había texto legible, devolvemos texto corregido y descripción opcional
+    desc, vision_used = await describe_image(data)
     return {
-        "original_text":    text,
-        "corrected_text":   corrected,
-        "description":      desc,
+        "original_text":     text,
+        "corrected_text":    corrected,
+        "description":       desc,
         "correction_source": "gemini" if used_g else "basic",
-        "warnings":         [] if used_g else ["Usando correcciones básicas (sin Gemini)"]
+        "vision_source":     "gemini-1.5-flash" if vision_used else "fallback",
+        "warnings":          [] if used_g else ["Usando correcciones básicas (sin Gemini)"]
     }
 
 # --------------------------------------------------
@@ -252,8 +277,8 @@ async def verify_text(req: TextRequest):
         raise HTTPException(400, "El texto no puede estar vacío")
     corrected, used = await correct_with_gemini(req.text)
     resp = {
-        "status": "success",
-        "original_text": req.text,
+        "status":         "success",
+        "original_text":  req.text,
         "corrected_text": corrected,
         "correction_source": "gemini" if used else "basic"
     }
@@ -292,11 +317,9 @@ async def get_api_status():
 # --------------------------------------------------
 app.include_router(auth_router)
 
-
 # --------------------------------------------------
 # Rutas protegidas para leer/actualizar ajustes
 # --------------------------------------------------
-
 @app.get("/me/settings", response_model=schemas.UserSettingsOut)
 def read_my_settings(
     current_user: models.User = Depends(get_current_user),
@@ -339,17 +362,16 @@ def update_my_settings(
         return settings
 
     # Si ya existía, actualizamos
-    settings.font_size         = settings_in.font_size
-    settings.font_family       = settings_in.font_family
-    settings.text_color        = settings_in.text_color
-    settings.background_color  = settings_in.background_color
-    settings.rate              = settings_in.rate
-    settings.pitch             = settings_in.pitch
+    settings.font_size        = settings_in.font_size
+    settings.font_family      = settings_in.font_family
+    settings.text_color       = settings_in.text_color
+    settings.background_color = settings_in.background_color
+    settings.rate             = settings_in.rate
+    settings.pitch            = settings_in.pitch
 
     db.commit()
     db.refresh(settings)
     return settings
-
 
 # --------------------------------------------------
 # Endpoint de prueba
@@ -357,7 +379,6 @@ def update_my_settings(
 @app.get("/")
 def read_root():
     return {"message": "¡API corriendo correctamente!"}
-
 
 # --------------------------------------------------
 # Levantar el servidor

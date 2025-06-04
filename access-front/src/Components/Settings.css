@@ -1,3 +1,5 @@
+/* Settings.css */
+
 /* ---------------------------------------------------
    Contenedor principal de Ajustes
    --------------------------------------------------- */
@@ -5,10 +7,10 @@
   padding: 2rem;
   max-width: 600px;
   margin: 20px auto;
-  background: #7c7c7c;
+  background: #222;              /* Fondo oscuro */
+  color: #EEE;                   /* Texto claro */
   border-radius: 8px;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 /* ---------------------------------------------------
@@ -24,20 +26,20 @@
   flex: 1;
   padding: 0.5rem 1rem;
   border: none;
-  background-color: #000;
+  background-color: #333;        /* Gris oscuro */
+  color: #EEE;                   /* Blanco tenue */
   cursor: pointer;
   border-radius: 4px;
-  color: #fff;
   font-weight: bold;
   transition: background-color 0.2s ease;
 }
 
 .tabs button:hover {
-  background-color: #1a1a1a;
+  background-color: #555;        /* Hover gris medio */
 }
 
 .tabs button.active {
-  background-color: #444;
+  background-color: #111;        /* Más oscuro cuando está activo */
 }
 
 /* ---------------------------------------------------
@@ -100,19 +102,19 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.75rem 1.5rem;   /* Botón un poco más grande */
+  padding: 0.75rem 1.5rem;
   font-size: 1rem;
-  background-color: #2c3e50;
+  background-color: #333;        /* Gris oscuro */
+  color: #EEE;                   /* Blanco tenue */
   border: none;
   border-radius: 4px;
-  color: #fff;
   cursor: pointer;
   white-space: nowrap;
   transition: background-color 0.2s ease;
 }
 
 .action-btn:hover {
-  background-color: #1a252f;
+  background-color: #555;        /* Hover gris medio */
 }
 
 /* ---------------------------------------------------
@@ -127,10 +129,10 @@
    --------------------------------------------------- */
 .sample-text {
   padding: 0.75rem;
-  border: 1px solid #ddd;
+  border: 1px solid #EEE;        /* Borde claro */
   border-radius: 4px;
-  background-color: #fff;
-  color: #000;
+  background-color: #111;        /* Fondo muy oscuro */
+  color: #EEE;                   /* Texto claro */
   line-height: 1.4;
   max-height: 150px;
   overflow-y: auto;
@@ -141,6 +143,9 @@
    --------------------------------------------------- */
 .narrow-input {
   width: 80px;
+  background-color: #333;        /* Gris oscuro de fondo */
+  color: #EEE;                   /* Texto claro */
+  border: 1px solid #EEE;        /* Borde claro */
 }
 
 /* ---------------------------------------------------
@@ -148,16 +153,16 @@
    --------------------------------------------------- */
 label {
   font-weight: bold;
-  color: #fff;
+  color: #EEE;                   /* Claro */
 }
 
 /* ---------------------------------------------------
-   Mensaje de éxito/confirmación (opcional, si lo muestras aquí)
+   Mensaje de éxito/confirmación (opcional)
    --------------------------------------------------- */
 .save-message {
   text-align: center;
   margin-top: 0.5rem;
-  color: #b5e7a0; /* Verde claro para mensaje de éxito */
+  color: #EEE;                   /* Claro */
   font-size: 0.95rem;
 }
 
@@ -171,19 +176,31 @@ label {
 }
 
 /* ---------------------------------------------------
-   Botón “Guardar” en verde
+   Botón “Guardar” en paleta oscura
    --------------------------------------------------- */
 .save-btn {
-  background-color: #388e3c;  /* Verde oscuro */
-  color: #fff;
+  background-color: #333;        /* Gris oscuro */
+  color: #EEE;                   /* Texto claro */
   padding: 0.75rem 1.5rem;
   border-radius: 4px;
-  border: none;
+  border: 1px solid #EEE;        /* Borde claro */
   cursor: pointer;
   transition: background-color 0.2s ease;
   font-size: 1rem;
 }
 
 .save-btn:hover {
-  background-color: #2e7d32;  /* Verde aún más oscuro al pasar ratón */
+  background-color: #555;        /* Hover gris medio */
+}
+
+/* ===============================
+   MEDIA QUERY: AJUSTES EN MÓVIL
+   =============================== */
+@media (max-width: 600px) {
+  .settings-container {
+    width: 100%;
+    margin: 0;        /* Ocupa todo el ancho sin margen lateral */
+    border-radius: 0; /* Sin bordes redondeados */
+    padding: 1rem 0.5rem;
+  }
 }

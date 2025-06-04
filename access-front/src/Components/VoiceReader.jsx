@@ -1,3 +1,4 @@
+// src/Components/VoiceReader.jsx
 import React, { useState } from 'react';
 
 export default function VoiceReader({ text, readerSettings }) {
@@ -17,6 +18,7 @@ export default function VoiceReader({ text, readerSettings }) {
       utterance.lang = 'es-ES';
       utterance.rate = parseFloat(readerSettings.rate);
       utterance.pitch = parseFloat(readerSettings.pitch);
+      utterance.volume = parseFloat(readerSettings.volume);
 
       if (readerSettings.voice !== 'default') {
         const voices = window.speechSynthesis.getVoices();

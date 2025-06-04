@@ -3,22 +3,22 @@ import React, { useState, useEffect } from "react";
 import "./Settings.css";
 
 export default function Settings({
-  initialReaderSettings,    // NUEVA prop: valores actuales del lector
-  initialTextSettings,      // NUEVA prop: valores actuales del texto
+  initialReaderSettings,
+  initialTextSettings,
   onReaderSettingsChange,
   onTextSettingsChange,
   onSave
 }) {
-  // Controla qué pestaña está activa
   const [activeTab, setActiveTab] = useState("reader");
 
-  // Estado interno para Lector de Pantalla, se inicializa desde la prop
+  // Estado interno para Lector de Pantalla
   const [readerSettings, setReaderSettings] = useState({
     rate: 1,
-    pitch: 1
+    pitch: 1,
+    volume: 5
   });
 
-  // Estado interno para Texto Plano, se inicializa desde la prop
+  // Estado interno para Texto Plano
   const [textSettings, setTextSettings] = useState({
     fontSize: "16",
     fontFamily: "Arial",
@@ -26,12 +26,13 @@ export default function Settings({
     backgroundColor: "#ffffff"
   });
 
-  // Cada vez que cambian las props initial*, sincronizamos el estado interno
+  // Sincronizamos con props iniciales cuando cambian
   useEffect(() => {
     if (initialReaderSettings) {
       setReaderSettings({
         rate: initialReaderSettings.rate,
-        pitch: initialReaderSettings.pitch
+        pitch: initialReaderSettings.pitch,
+        volume: initialReaderSettings.volume ?? 5
       });
     }
   }, [initialReaderSettings]);
@@ -47,39 +48,31 @@ export default function Settings({
     }
   }, [initialTextSettings]);
 
-  // Detiene cualquier lectura activa de voz
   const stopSpeaking = () => {
     if (window.speechSynthesis && window.speechSynthesis.speaking) {
       window.speechSynthesis.cancel();
     }
   };
 
-  // Función auxiliar para limitar valores
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
-  // Maneja cambios en rate / pitch
   const handleReaderChange = (e) => {
     stopSpeaking();
     const { name, value: raw } = e.target;
-    let parsed;
-    if (name === "rate") {
-      parsed = clamp(parseFloat(raw) || 0, 0.1, 10);
-    } else {
-      // name === "pitch"
-      parsed = clamp(parseFloat(raw) || 0, 0, 2);
-    }
+    let parsed = parseFloat(raw) || 0;
+    if (name === "rate") parsed = clamp(parsed, 0.1, 10);
+    else if (name === "pitch") parsed = clamp(parsed, 0, 2);
+    else if (name === "volume") parsed = clamp(parsed, 0, 5);
     const next = { ...readerSettings, [name]: parsed };
     setReaderSettings(next);
     onReaderSettingsChange(next);
   };
 
-  // Maneja cambios en controles de texto (tamaño, fuente, color, fondo)
   const handleTextChange = (e) => {
     stopSpeaking();
     const { name, value } = e.target;
     const next = { ...textSettings, [name]: value };
     setTextSettings(next);
-    // Le pasamos a App.jsx el tamaño con "px"
     onTextSettingsChange({
       fontSize: `${next.fontSize}px`,
       fontFamily: next.fontFamily,
@@ -88,7 +81,6 @@ export default function Settings({
     });
   };
 
-  // Prueba de voz con los valores actuales
   const testVoice = () => {
     stopSpeaking();
     if (!window.speechSynthesis) {
@@ -101,18 +93,17 @@ export default function Settings({
     utterance.lang = "es-ES";
     utterance.rate = readerSettings.rate;
     utterance.pitch = readerSettings.pitch;
+    utterance.volume = readerSettings.volume; // <-- nuevo
     window.speechSynthesis.speak(utterance);
   };
 
-  // Restaurar lector a valores por defecto
   const resetReaderDefaults = () => {
     stopSpeaking();
-    const defaults = { rate: 1, pitch: 1 };
+    const defaults = { rate: 1, pitch: 1, volume: 1 };
     setReaderSettings(defaults);
     onReaderSettingsChange(defaults);
   };
 
-  // Restaurar texto a valores por defecto
   const resetTextDefaults = () => {
     stopSpeaking();
     const defaults = {
@@ -194,6 +185,30 @@ export default function Settings({
               max="2"
               step="0.1"
               value={readerSettings.pitch}
+              onChange={handleReaderChange}
+            />
+          </div>
+
+          {/* Volumen */}
+          <div className="control-row">
+            <label htmlFor="volume">Volumen:</label>
+            <input
+              id="volume"
+              type="range"
+              name="volume"
+              min="0"
+              max="1"
+              step="0.01"
+              value={readerSettings.volume}
+              onChange={handleReaderChange}
+            />
+            <input
+              type="number"
+              name="volume"
+              min="0"
+              max="1"
+              step="0.01"
+              value={readerSettings.volume}
               onChange={handleReaderChange}
             />
           </div>

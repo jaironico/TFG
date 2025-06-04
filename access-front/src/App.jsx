@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Login from './Components/Auth/login';
 import Register from './Components/Auth/Register';
 import { FileUploader } from './Components/FileUploader';
@@ -7,26 +7,38 @@ import TextEditor from './Components/TextEditor';
 import VoiceReader from './Components/VoiceReader';
 import Settings from './Components/Settings';
 
+import './index.css';   // Estilos globales e index
+import './App.css';     // Estilos de la App (colores oscuros)
+
+/* -----------------------------------------
+   API_BASE apuntando a tu backend local
+   ----------------------------------------- */
 const API_BASE = 'http://localhost:8000';
 
 function App() {
   // Estados de autenticación
   const [token, setToken] = useState(null);
   const [authError, setAuthError] = useState(null);
-  const [authMode, setAuthMode] = useState('login'); // 'login' o 'register'
+  const [authMode, setAuthMode] = useState('login');
 
   // Estados de ajustes
-  const [readerSettings, setReaderSettings] = useState({ rate: 1, pitch: 1, voice: 'default' });
+  const [readerSettings, setReaderSettings] = useState({
+    rate: 1,
+    pitch: 1,
+    volume: 5,
+    voice: 'default'
+  });
   const [textSettings, setTextSettings] = useState({
     fontSize: '16px',
     fontFamily: 'Arial',
-    textColor: '#333333',
-    backgroundColor: '#ffffff'
+    textColor: '#EEE',
+    backgroundColor: '#111'
   });
 
-  // Estado del documento (OCR)
+  // Estado del documento (OCR + descripción)
   const [documentState, setDocumentState] = useState({
     text: '',
+    description: '',
     isCorrected: false,
     correctionAttempted: false,
     isLoading: false,
@@ -39,8 +51,8 @@ function App() {
   // Mostrar/Ocultar ajustes
   const [showSettings, setShowSettings] = useState(false);
 
-  // Mensaje temporal al guardar ajustes
-  const [saveMessage, setSaveMessage] = useState('');
+  // Referencia al contenedor del botón de Ajustes
+  const ajustesRef = useRef(null);
 
   // Detener voz al cambiar ajustes
   useEffect(() => {
@@ -64,14 +76,22 @@ function App() {
 
     localStorage.removeItem('token');
     setToken(null);
-    setReaderSettings({ rate: 1, pitch: 1, voice: 'default' });
+    setReaderSettings({ rate: 1, pitch: 1, volume: 2, voice: 'default' });
     setTextSettings({
       fontSize: '16px',
       fontFamily: 'Arial',
-      textColor: '#333333',
-      backgroundColor: '#ffffff'
+      textColor: '#EEE',
+      backgroundColor: '#111'
     });
     setOriginalImageURL(null);
+    setDocumentState({
+      text: '',
+      description: '',
+      isCorrected: false,
+      correctionAttempted: false,
+      isLoading: false,
+      error: null
+    });
   };
 
   const login = async (username, password) => {
@@ -104,9 +124,7 @@ function App() {
     try {
       const res = await fetch(`${API_BASE}/auth/register`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
 
@@ -156,12 +174,13 @@ function App() {
       setTextSettings({
         fontSize: data.font_size + 'px',
         fontFamily: data.font_family,
-        textColor: data.text_color,
-        backgroundColor: data.background_color
+        textColor: '#EEE',
+        backgroundColor: '#111'
       });
       setReaderSettings({
         rate: parseFloat(data.rate),
         pitch: parseFloat(data.pitch),
+        volume: parseFloat(data.volume || 2),
         voice: 'default'
       });
     } catch (err) {
@@ -186,7 +205,8 @@ function App() {
           text_color: newText.textColor,
           background_color: newText.backgroundColor,
           rate: String(newReader.rate),
-          pitch: String(newReader.pitch)
+          pitch: String(newReader.pitch),
+          volume: String(newReader.volume)
         })
       });
 
@@ -194,24 +214,28 @@ function App() {
         throw new Error('Error al guardar ajustes');
       }
 
-      setSaveMessage('Ajustes guardados');
-      setTimeout(() => setSaveMessage(''), 3000);
+      // Ventana emergente de confirmación
+      window.alert("Ajustes guardados");
     } catch (err) {
       console.error('Error guardando ajustes:', err);
-      setSaveMessage('Error al guardar ajustes');
-      setTimeout(() => setSaveMessage(''), 3000);
+      window.alert("Error guardando ajustes");
     }
   };
 
   const handleUpload = async (file) => {
+    // Mostrar imagen original
     setOriginalImageURL(URL.createObjectURL(file));
+
+    // Resetear estado de procesamiento
     setDocumentState({
       text: '',
+      description: '',
       isCorrected: false,
       correctionAttempted: false,
       isLoading: true,
       error: null
     });
+
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -223,8 +247,11 @@ function App() {
       if (!response.ok) {
         throw new Error(data.detail || 'Error al procesar el archivo');
       }
+
+      // Guardar texto y descripción
       setDocumentState({
         text: data.corrected_text || data.original_text || '',
+        description: data.description || '',
         isCorrected: data.correction_source === 'gemini',
         correctionAttempted: Boolean(data.gemini_available),
         isLoading: false,
@@ -240,6 +267,19 @@ function App() {
     }
   };
 
+  const handleClear = () => {
+    setOriginalImageURL(null);
+    setDocumentState({
+      text: '',
+      description: '',
+      isCorrected: false,
+      correctionAttempted: false,
+      isLoading: false,
+      error: null
+    });
+  };
+
+  // Si no hay token, mostramos login o registro
   if (!token) {
     return authMode === 'login' ? (
       <Login
@@ -263,174 +303,150 @@ function App() {
   }
 
   return (
-    <div style={styles.outerContainer}>
-      <div style={styles.app}>
-        <h1 style={styles.title}>Editor de Documentos con IA</h1>
+    <div className="app-outer-container">
+      <div className="app-container">
 
-        <div style={styles.topBar}>
-          <button
-            onClick={() => setShowSettings(v => !v)}
-            style={styles.ajustesButton}
-            aria-expanded={showSettings}
-          >
-            Ajustes
-          </button>
+        {/* ======================================== */}
+        {/* 1) Cabecera con nuevo título */}
+        {/* ======================================== */}
+        <h1 className="app-title">Acceso Inteligente a Documentos</h1>
+
+        {/* ======================================== */}
+        {/* 2) TopBar con “Ajustes” en la esquina */}
+        {/* ======================================== */}
+        <div className="top-bar">
+          <div ref={ajustesRef} className="ajustes-wrapper">
+            <button
+              onClick={() => setShowSettings(v => !v)}
+              className="ajustes-button"
+              aria-expanded={showSettings}
+            >
+              ⚙️ Ajustes
+            </button>
+
+            {showSettings && (
+              <div className="settingsDropdown">
+                <Settings
+                  initialReaderSettings={readerSettings}
+                  initialTextSettings={{
+                    fontSize: textSettings.fontSize.replace('px', ''),
+                    fontFamily: textSettings.fontFamily,
+                    textColor: textSettings.textColor,
+                    backgroundColor: textSettings.backgroundColor
+                  }}
+                  onReaderSettingsChange={readerNew => {
+                    setReaderSettings(readerNew);
+                  }}
+                  onTextSettingsChange={textNew => {
+                    setTextSettings(textNew);
+                  }}
+                  onSave={() => saveSettingsToServer(readerSettings, textSettings)}
+                />
+              </div>
+            )}
+          </div>
+
           <button
             onClick={handleLogout}
-            style={styles.logoutButton}
+            className="logout-button"
           >
-            Cerrar Sesión
+            🚪 Cerrar Sesión
           </button>
         </div>
 
-        {showSettings && (
-          <div>
-            <Settings
-              initialReaderSettings={readerSettings}
-              initialTextSettings={{
-                fontSize: textSettings.fontSize.replace('px', ''),
-                fontFamily: textSettings.fontFamily,
-                textColor: textSettings.textColor,
-                backgroundColor: textSettings.backgroundColor
-              }}
-              onReaderSettingsChange={readerNew => {
-                setReaderSettings(readerNew);
-              }}
-              onTextSettingsChange={textNew => {
-                setTextSettings(textNew);
-              }}
-              onSave={() => saveSettingsToServer(readerSettings, textSettings)}
-            />
-            {saveMessage && (
-              <div style={styles.saveMessage}>{saveMessage}</div>
+        {/* ======================================== */}
+        {/* 3) Área principal: Selector + Clear */}
+        {/* ======================================== */}
+        <div className="upload-section">
+          <FileUploader
+            onFileUpload={handleUpload}
+            disabled={documentState.isLoading}
+          />
+          {(originalImageURL || documentState.text || documentState.description) && (
+            <button onClick={handleClear} className="clear-button">
+              X
+            </button>
+          )}
+        </div>
+
+        {/* ======================================== */}
+        {/* 4) Contenido dividido en dos columnas: */}
+        {/*     - Izquierda: imagen original       */}
+        {/*     - Derecha: texto o descripción     */}
+        {/* ======================================== */}
+        <div className="content-container">
+          <div className="left-column">
+            {originalImageURL && (
+              <img
+                src={originalImageURL}
+                alt="Original subida"
+                className="image-preview"
+              />
             )}
           </div>
-        )}
-
-        <FileUploader
-          onFileUpload={handleUpload}
-          disabled={documentState.isLoading}
-        />
-
-        {originalImageURL && (
-          <div style={styles.imagePreviewContainer}>
-            <p>Imagen original:</p>
-            <img
-              src={originalImageURL}
-              alt="Original subida"
-              style={styles.imagePreview}
-            />
-          </div>
-        )}
-
-        {documentState.isLoading && (
-          <div style={styles.messageBox} role="status" aria-live="polite">
-            <p>Procesando documento...</p>
-          </div>
-        )}
-
-        {documentState.error && (
-          <div style={{ ...styles.messageBox, backgroundColor: '#ffebee' }} role="alert">
-            <p>Error: {documentState.error}</p>
-          </div>
-        )}
-
-        {documentState.text && (
-          <div style={styles.documentContainer}>
-            {documentState.correctionAttempted && !documentState.isCorrected && (
-              <div style={{ ...styles.messageBox, backgroundColor: '#fff8e1' }} role="alert">
-                <p>✋ Esta es una versión sin revisar, podría contener errores</p>
+          <div className="right-column">
+            {documentState.isLoading && (
+              <div className="message-box" role="status" aria-live="polite">
+                <p>Procesando documento...</p>
               </div>
             )}
 
-            <TextEditor
-              text={documentState.text}
-              readOnly={documentState.isLoading}
-              textSettings={textSettings}
-            />
+            {documentState.error && (
+              <div
+                className="message-box"
+                style={{ backgroundColor: '#550000' }} /* error en rojo oscuro */
+                role="alert"
+              >
+                <p>Error: {documentState.error}</p>
+              </div>
+            )}
 
-            <div style={styles.controls}>
-              <VoiceReader
-                text={documentState.text}
-                readerSettings={readerSettings}
-              />
-            </div>
+            {documentState.text !== '' ? (
+              <>
+                {documentState.correctionAttempted && !documentState.isCorrected && (
+                  <div
+                    className="message-box"
+                    style={{ backgroundColor: '#554400' }} /* advertencia en amarillo oscuro */
+                    role="alert"
+                  >
+                    <p>✋ Esta es una versión sin revisar, podría contener errores</p>
+                  </div>
+                )}
+                <TextEditor
+                  text={documentState.text}
+                  readOnly={documentState.isLoading}
+                  textSettings={textSettings}
+                />
+                <div className="controls">
+                  <VoiceReader
+                    text={documentState.text}
+                    readerSettings={readerSettings}
+                  />
+                </div>
+              </>
+            ) : (
+              documentState.description && (
+                <>
+                  <h3 className="description-title">Descripción de la imagen:</h3>
+                  <TextEditor
+                    text={documentState.description}
+                    readOnly={true}
+                    textSettings={textSettings}
+                  />
+                  <div className="controls">
+                    <VoiceReader
+                      text={documentState.description}
+                      readerSettings={readerSettings}
+                    />
+                  </div>
+                </>
+              )
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
 }
-
-const styles = {
-  outerContainer: {
-    display: 'flex',
-    justifyContent: 'center',
-    paddingTop: '20px'
-  },
-  app: {
-    width: '100%',
-    maxWidth: '800px',
-    padding: '20px',
-    fontFamily: 'Arial, sans-serif',
-    boxSizing: 'border-box'
-  },
-  title: {
-    textAlign: 'center',
-    color: '#2c3e50',
-    marginBottom: '20px'
-  },
-  topBar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '10px'
-  },
-  ajustesButton: {
-    padding: '10px 20px',
-    backgroundColor: '#2c3e50',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer'
-  },
-  logoutButton: {
-    padding: '10px 20px',
-    backgroundColor: '#b71c1c',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer'
-  },
-  messageBox: {
-    padding: '15px',
-    borderRadius: '4px',
-    margin: '20px 0',
-    textAlign: 'center'
-  },
-  documentContainer: {
-    marginTop: '30px'
-  },
-  controls: {
-    display: 'flex',
-    justifyContent: 'center',
-    marginTop: '20px'
-  },
-  saveMessage: {
-    marginTop: '10px',
-    textAlign: 'center',
-    color: '#388e3c',
-    fontWeight: 'bold'
-  },
-  imagePreviewContainer: {
-    textAlign: 'center',
-    marginTop: '20px'
-  },
-  imagePreview: {
-    maxWidth: '100%',
-    height: 'auto',
-    borderRadius: '4px',
-    border: '1px solid #ccc'
-  }
-};
 
 export default App;
