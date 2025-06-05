@@ -2,26 +2,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Login from './Components/Auth/login';
 import Register from './Components/Auth/Register';
+import Admin from './Components/Admin';
 import { FileUploader } from './Components/FileUploader';
 import TextEditor from './Components/TextEditor';
 import VoiceReader from './Components/VoiceReader';
 import Settings from './Components/Settings';
 
-import './index.css';   // Estilos globales e index
-import './App.css';     // Estilos de la App (colores oscuros)
+import './index.css';
+import './App.css';
 
-/* -----------------------------------------
-   API_BASE apuntando a tu backend local
-   ----------------------------------------- */
 const API_BASE = 'http://localhost:8000';
 
 function App() {
-  // Estados de autenticación
   const [token, setToken] = useState(null);
   const [authError, setAuthError] = useState(null);
   const [authMode, setAuthMode] = useState('login');
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // Estados de ajustes
   const [readerSettings, setReaderSettings] = useState({
     rate: 1,
     pitch: 1,
@@ -35,7 +32,6 @@ function App() {
     backgroundColor: '#111'
   });
 
-  // Estado del documento (OCR + descripción)
   const [documentState, setDocumentState] = useState({
     text: '',
     description: '',
@@ -45,28 +41,37 @@ function App() {
     error: null
   });
 
-  // Para mostrar la imagen original
   const [originalImageURL, setOriginalImageURL] = useState(null);
-
-  // Mostrar/Ocultar ajustes
   const [showSettings, setShowSettings] = useState(false);
-
-  // Referencia al contenedor del botón de Ajustes
   const ajustesRef = useRef(null);
 
-  // Detener voz al cambiar ajustes
   useEffect(() => {
     if (window.speechSynthesis && window.speechSynthesis.speaking) {
       window.speechSynthesis.cancel();
     }
   }, [readerSettings, textSettings]);
 
-  // Al montar, intento cargar token y ajustes
+  // useEffect encargado de inicializar token y rol admin al montar la app
   useEffect(() => {
     const saved = localStorage.getItem('token');
     if (saved) {
       setToken(saved);
-      fetchSettings(saved);
+      (async () => {
+        try {
+          const res = await fetch(`${API_BASE}/me`, {
+            headers: { Authorization: `Bearer ${saved}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setIsAdmin(data.is_admin);
+            if (!data.is_admin) {
+              fetchSettings(saved);
+            }
+          }
+        } catch (err) {
+          console.error("Error obteniendo /me:", err);
+        }
+      })();
     }
   }, []);
 
@@ -76,6 +81,7 @@ function App() {
 
     localStorage.removeItem('token');
     setToken(null);
+    setIsAdmin(false);
     setReaderSettings({ rate: 1, pitch: 1, volume: 2, voice: 'default' });
     setTextSettings({
       fontSize: '16px',
@@ -113,7 +119,20 @@ function App() {
       const data = await res.json();
       localStorage.setItem('token', data.access_token);
       setToken(data.access_token);
-      fetchSettings(data.access_token);
+
+      // CONSULTA /me y setea isAdmin, si no es admin, carga settings
+      const meRes = await fetch(`${API_BASE}/me`, {
+        headers: { Authorization: `Bearer ${data.access_token}` }
+      });
+      if (meRes.ok) {
+        const me = await meRes.json();
+        setIsAdmin(me.is_admin);
+        if (!me.is_admin) {
+          fetchSettings(data.access_token);
+        }
+      } else {
+        setIsAdmin(false);
+      }
     } catch (err) {
       setAuthError(err.message);
     }
@@ -214,7 +233,6 @@ function App() {
         throw new Error('Error al guardar ajustes');
       }
 
-      // Ventana emergente de confirmación
       window.alert("Ajustes guardados");
     } catch (err) {
       console.error('Error guardando ajustes:', err);
@@ -223,10 +241,7 @@ function App() {
   };
 
   const handleUpload = async (file) => {
-    // Mostrar imagen original
     setOriginalImageURL(URL.createObjectURL(file));
-
-    // Resetear estado de procesamiento
     setDocumentState({
       text: '',
       description: '',
@@ -248,7 +263,6 @@ function App() {
         throw new Error(data.detail || 'Error al procesar el archivo');
       }
 
-      // Guardar texto y descripción
       setDocumentState({
         text: data.corrected_text || data.original_text || '',
         description: data.description || '',
@@ -279,7 +293,6 @@ function App() {
     });
   };
 
-  // Si no hay token, mostramos login o registro
   if (!token) {
     return authMode === 'login' ? (
       <Login
@@ -302,18 +315,14 @@ function App() {
     );
   }
 
+  if (isAdmin) {
+    return <Admin token={token} />;
+  }
+
   return (
     <div className="app-outer-container">
       <div className="app-container">
-
-        {/* ======================================== */}
-        {/* 1) Cabecera con nuevo título */}
-        {/* ======================================== */}
-        <h1 className="app-title">Acceso Inteligente a Documentos</h1>
-
-        {/* ======================================== */}
-        {/* 2) TopBar con “Ajustes” en la esquina */}
-        {/* ======================================== */}
+        <h1 className="app-title">DocuAccesible</h1>
         <div className="top-bar">
           <div ref={ajustesRef} className="ajustes-wrapper">
             <button
@@ -323,7 +332,6 @@ function App() {
             >
               ⚙️ Ajustes
             </button>
-
             {showSettings && (
               <div className="settingsDropdown">
                 <Settings
@@ -345,36 +353,26 @@ function App() {
               </div>
             )}
           </div>
-
-          <button
-            onClick={handleLogout}
-            className="logout-button"
-          >
+          <button onClick={handleLogout} className="logout-button">
             🚪 Cerrar Sesión
           </button>
         </div>
-
-        {/* ======================================== */}
-        {/* 3) Área principal: Selector + Clear */}
-        {/* ======================================== */}
         <div className="upload-section">
           <FileUploader
             onFileUpload={handleUpload}
             disabled={documentState.isLoading}
           />
+        </div>
+        <div className="content-container">
           {(originalImageURL || documentState.text || documentState.description) && (
-            <button onClick={handleClear} className="clear-button">
-              X
+            <button
+              onClick={handleClear}
+              className="clear-button"
+              aria-label="Limpiar contenido"
+            >
+              ×
             </button>
           )}
-        </div>
-
-        {/* ======================================== */}
-        {/* 4) Contenido dividido en dos columnas: */}
-        {/*     - Izquierda: imagen original       */}
-        {/*     - Derecha: texto o descripción     */}
-        {/* ======================================== */}
-        <div className="content-container">
           <div className="left-column">
             {originalImageURL && (
               <img
@@ -390,23 +388,21 @@ function App() {
                 <p>Procesando documento...</p>
               </div>
             )}
-
             {documentState.error && (
               <div
                 className="message-box"
-                style={{ backgroundColor: '#550000' }} /* error en rojo oscuro */
+                style={{ backgroundColor: '#550000' }}
                 role="alert"
               >
                 <p>Error: {documentState.error}</p>
               </div>
             )}
-
             {documentState.text !== '' ? (
               <>
                 {documentState.correctionAttempted && !documentState.isCorrected && (
                   <div
                     className="message-box"
-                    style={{ backgroundColor: '#554400' }} /* advertencia en amarillo oscuro */
+                    style={{ backgroundColor: '#554400' }}
                     role="alert"
                   >
                     <p>✋ Esta es una versión sin revisar, podría contener errores</p>

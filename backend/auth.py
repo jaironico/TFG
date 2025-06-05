@@ -46,14 +46,18 @@ def get_user_by_username(db: Session, username: str) -> Optional[models.User]:
 
 def create_user(db: Session, user_in: schemas.UserCreate) -> models.User:
     hashed_pw = get_password_hash(user_in.password)
-    new_user = models.User(username=user_in.username, hashed_password=hashed_pw)
+    new_user = models.User(
+        username=user_in.username,
+        hashed_password=hashed_pw,
+        is_admin=getattr(user_in, "is_admin", 0)
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     # Crear registro inicial de UserSettings:
     default_settings = models.UserSettings(user_id=new_user.id)
     db.add(default_settings)
-    db.commit()
+    db.commit() 
     return new_user
 
 def authenticate_user(db: Session, username: str, password: str) -> Optional[models.User]:

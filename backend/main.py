@@ -5,7 +5,7 @@ import logging
 import hashlib
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 
 from fastapi import FastAPI, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,7 +17,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-# Importaciones para la parte de usuarios / ajustes
+# Importaciones para usuarios / ajustes
 from database import engine, SessionLocal
 import models, schemas
 from auth import router as auth_router, get_current_user, get_db
@@ -53,9 +53,8 @@ class ImageDescriptionRequest(BaseModel):
 # --------------------------------------------------
 GEMINI_API_KEY       = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL         = "gemini-1.5-flash"
-GEMINI_VISION_MODEL  = "gemini-1.5-flash"  # mismo modelo para visión
+GEMINI_VISION_MODEL  = "gemini-1.5-flash"
 
-# Estado para manejar errores y cuotas de Gemini
 class APIStatus:
     def __init__(self):
         self.last_error   = None
@@ -78,7 +77,6 @@ class APIStatus:
 
 api_status = APIStatus()
 
-# Intento de configurar Gemini
 try:
     if not GEMINI_API_KEY:
         raise ValueError("No se encontró GEMINI_API_KEY en variables de entorno")
@@ -86,8 +84,6 @@ try:
     gemini_model        = genai.GenerativeModel(GEMINI_MODEL)
     gemini_vision_model = genai.GenerativeModel(GEMINI_VISION_MODEL)
     logger.info(f"Conexión con Gemini establecida (Modelos: {GEMINI_MODEL})")
-
-
 except Exception as e:
     logger.warning(f"Error configurando Gemini: {e}")
     gemini_model = None
@@ -99,18 +95,36 @@ except Exception as e:
 # --------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, restringe al dominio de tu frontend
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # --------------------------------------------------
-# Conectar y crear tablas de la base de datos
+# Crear tablas
 # --------------------------------------------------
 models.Base.metadata.create_all(bind=engine)
 
+# Crear usuario admin si no existe
+from auth import get_password_hash
+from models import User
+
+db = SessionLocal()
+existing_admin = db.query(User).filter(User.username == "adminadmin").first()
+if not existing_admin:
+    admin_user = User(
+        username="adminadmin",
+        hashed_password=get_password_hash("adminadmin"),
+        is_admin=1
+    )
+    db.add(admin_user)
+    db.commit()
+    print("Usuario admin creado")
+else:
+    print("Usuario admin ya existe")
+
 # --------------------------------------------------
-# Caché con TTL (para correcciones y descripciones)
+# Caché con TTL
 # --------------------------------------------------
 class TimedCache:
     def __init__(self, maxsize=100, ttl=timedelta(hours=1)):
@@ -149,7 +163,7 @@ def apply_basic_corrections(text: str) -> str:
     return text
 
 # --------------------------------------------------
-# Funciones de corrección con Gemini
+# Corrección y descripción
 # --------------------------------------------------
 async def correct_with_gemini(text: str) -> Tuple[str, bool]:
     key = get_cache_key(text)
@@ -188,9 +202,6 @@ async def correct_with_gemini(text: str) -> Tuple[str, bool]:
         api_status.report_error(e)
         return apply_basic_corrections(text), False
 
-# --------------------------------------------------
-# Funciones de descripción de imagen con Gemini (multimodal)
-# --------------------------------------------------
 async def describe_image(image_bytes: bytes) -> Tuple[str, bool]:
     image_hash = hashlib.md5(image_bytes).hexdigest()
     cached = description_cache.get(image_hash)
@@ -215,13 +226,12 @@ async def describe_image(image_bytes: bytes) -> Tuple[str, bool]:
         return "Error generando descripción", False
 
 # --------------------------------------------------
-# Lógica de procesamiento de imágenes subidas
+# OCR + procesamiento
 # --------------------------------------------------
 async def process_image(file: UploadFile) -> Dict[str, str]:
     data = await file.read()
     img  = Image.open(BytesIO(data))
 
-    # Paso 1: OCR con Tesseract (español + inglés)
     custom_cfg = r'--oem 3 --psm 6 -l spa+eng'
     text = pytesseract.image_to_string(img, config=custom_cfg).strip()
     if not text:
@@ -229,10 +239,8 @@ async def process_image(file: UploadFile) -> Dict[str, str]:
 
     logger.info(f"OCR completado: {len(text)} caracteres")
 
-    # Paso 2: Corrección / detección "sin texto"
     corrected, used_g = await correct_with_gemini(text)
 
-    # Si Gemini devolvió "True" → no hay texto legible
     if corrected == "True":
         desc, vision_used = await describe_image(data)
         return {
@@ -244,7 +252,6 @@ async def process_image(file: UploadFile) -> Dict[str, str]:
             "warnings":          [] if vision_used else ["Descripción limitada (sin Gemini Vision)"]
         }
 
-    # Si había texto legible, devolvemos texto corregido y descripción opcional
     desc, vision_used = await describe_image(data)
     return {
         "original_text":     text,
@@ -256,7 +263,7 @@ async def process_image(file: UploadFile) -> Dict[str, str]:
     }
 
 # --------------------------------------------------
-# Rutas para OCR / corrección / descripción
+# Endpoints públicos
 # --------------------------------------------------
 @app.post("/upload")
 async def upload_file(file: UploadFile):
@@ -313,13 +320,14 @@ async def get_api_status():
     }
 
 # --------------------------------------------------
-# Montar router de autenticación (registro/login)
+# Autenticación y ajustes
 # --------------------------------------------------
 app.include_router(auth_router)
 
-# --------------------------------------------------
-# Rutas protegidas para leer/actualizar ajustes
-# --------------------------------------------------
+@app.get("/me", response_model=schemas.UserOut)
+def get_me(current_user: models.User = Depends(get_current_user)):
+    return current_user
+
 @app.get("/me/settings", response_model=schemas.UserSettingsOut)
 def read_my_settings(
     current_user: models.User = Depends(get_current_user),
@@ -346,7 +354,6 @@ def update_my_settings(
           .first()
     )
     if not settings:
-        # Si no existía, creamos uno nuevo
         settings = models.UserSettings(
             user_id=current_user.id,
             font_size=settings_in.font_size,
@@ -361,7 +368,6 @@ def update_my_settings(
         db.refresh(settings)
         return settings
 
-    # Si ya existía, actualizamos
     settings.font_size        = settings_in.font_size
     settings.font_family      = settings_in.font_family
     settings.text_color       = settings_in.text_color
@@ -373,15 +379,41 @@ def update_my_settings(
     db.refresh(settings)
     return settings
 
+@app.get("/admin/users", response_model=List[schemas.UserOut])
+def get_all_users(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.is_admin != 1:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    return db.query(models.User).all()
+
+@app.delete("/admin/users/{user_id}")
+def delete_user(
+    user_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.is_admin != 1:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    db.delete(user)
+    db.commit()
+    return {"message": "Usuario eliminado"}
+
 # --------------------------------------------------
-# Endpoint de prueba
+# Endpoint raíz
 # --------------------------------------------------
 @app.get("/")
 def read_root():
     return {"message": "¡API corriendo correctamente!"}
 
 # --------------------------------------------------
-# Levantar el servidor
+# Arranque
 # --------------------------------------------------
 if __name__ == "__main__":
     import uvicorn

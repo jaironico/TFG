@@ -8,6 +8,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
+    is_admin = Column(Integer, default=0)
 
     settings = relationship("UserSettings", back_populates="owner", uselist=False)
     # uselist=False porque cada usuario tendrá un único registro en UserSettings
@@ -27,5 +28,6 @@ class UserSettings(Base):
     # Ajustes de voz
     rate = Column(String(10), default="1")    # almacenamos como cadena para simplificar
     pitch = Column(String(10), default="1")
+    volume = Column(String(10), default="1")
     
     owner = relationship("User", back_populates="settings")

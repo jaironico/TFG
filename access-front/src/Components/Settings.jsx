@@ -69,17 +69,24 @@ export default function Settings({
   };
 
   const handleTextChange = (e) => {
-    stopSpeaking();
-    const { name, value } = e.target;
-    const next = { ...textSettings, [name]: value };
-    setTextSettings(next);
-    onTextSettingsChange({
-      fontSize: `${next.fontSize}px`,
-      fontFamily: next.fontFamily,
-      textColor: next.textColor,
-      backgroundColor: next.backgroundColor
-    });
-  };
+  stopSpeaking();
+  const { name, value } = e.target;
+  const next = { ...textSettings, [name]: value };
+
+  // Límite específico para fontSize
+  if (name === "fontSize") {
+    const num = parseInt(value);
+    next[name] = isNaN(num) ? "16" : Math.min(num, 72).toString();
+  }
+
+  setTextSettings(next);
+  onTextSettingsChange({
+    fontSize: `${next.fontSize}px`,
+    fontFamily: next.fontFamily,
+    textColor: next.textColor,
+    backgroundColor: next.backgroundColor
+  });
+};
 
   const testVoice = () => {
     stopSpeaking();
@@ -93,7 +100,7 @@ export default function Settings({
     utterance.lang = "es-ES";
     utterance.rate = readerSettings.rate;
     utterance.pitch = readerSettings.pitch;
-    utterance.volume = readerSettings.volume; // <-- nuevo
+    utterance.volume = readerSettings.volume;
     window.speechSynthesis.speak(utterance);
   };
 
@@ -248,7 +255,7 @@ export default function Settings({
             <label htmlFor="fontFamily">Fuente:</label>
             <select
               id="fontFamily"
-              className="narrow-input"
+              className="narrow-input select-scrollable"
               name="fontFamily"
               value={textSettings.fontFamily}
               onChange={handleTextChange}
@@ -257,6 +264,19 @@ export default function Settings({
               <option value="Verdana">Verdana</option>
               <option value="Georgia">Georgia</option>
               <option value="Courier New">Courier New</option>
+              <option value="Tahoma">Tahoma</option>
+              <option value="Trebuchet MS">Trebuchet MS</option>
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Lucida Console">Lucida Console</option>
+              <option value="Comic Sans MS">Comic Sans MS</option>
+              <option value="Impact">Impact</option>
+              <option value="Segoe UI">Segoe UI</option>
+              <option value="Roboto">Roboto</option>
+              <option value="Open Sans">Open Sans</option>
+              <option value="Lato">Lato</option>
+              <option value="Ubuntu">Ubuntu</option>
+              <option value="Monospace">Monospace</option>
+              <option value="Helvetica">Helvetica</option>
             </select>
           </div>
 

@@ -1,26 +1,25 @@
 /* App.css */
 
-/* ===============================
-   CONTENEDOR PRINCIPAL DE LA APP
-   =============================== */
+/* CONTENEDOR PRINCIPAL DE LA APP */
+
 .app-container {
   width: 100%;
   max-width: 1200px;
   padding: 10px 20px;
   font-family: Arial, sans-serif;
   box-sizing: border-box;
-  background-color: #111;       /* Fondo heredado muy oscuro */
-  color: #EEE;                  /* Texto claro */
+  background-color: #111;
+  color: #EEE;
 }
 
-/* ====== Cabecera y título ====== */
+/*  Cabecera y título  */
 .app-title {
   text-align: center;
-  color: #EEE;                 /* Título claro */
+  color: #EEE;                
   margin-bottom: 10px;
 }
 
-/* ====== TopBar ====== */
+/*  TopBar  */
 .top-bar {
   display: flex;
   justify-content: space-between;
@@ -38,9 +37,9 @@
 /* Botón de Ajustes */
 .ajustes-button {
   padding: 8px 16px;
-  background-color: #222;      /* Botón oscuro */
-  color: #EEE;                 /* Texto claro */
-  border: 1px solid #EEE;      /* Borde claro */
+  background-color: #222;
+  color: #EEE;
+  border: 1px solid #EEE;
   border-radius: 4px;
   cursor: pointer;
 }
@@ -48,14 +47,14 @@
 /* Botón de Cerrar Sesión */
 .logout-button {
   padding: 8px 16px;
-  background-color: #222;      /* Botón oscuro */
-  color: #EEE;                 /* Texto claro */
-  border: 1px solid #EEE;      /* Borde claro */
+  background-color: #222;
+  color: #EEE;
+  border: 1px solid #EEE;
   border-radius: 4px;
   cursor: pointer;
 }
 
-/* ====== Sección de Upload + Clear ====== */
+/*  Sección de Upload + Clear  */
 .upload-section {
   display: flex;
   flex-direction: column;
@@ -71,8 +70,8 @@
   padding: 0;
   font-size: 1.25em;
   font-weight: bold;
-  background-color: #444;       /* Botón gris oscuro */
-  color: #EEE;                  /* Texto claro */
+  background-color: #444;
+  color: #EEE;
   border: none;
   border-radius: 50%;
   display: flex;
@@ -81,11 +80,21 @@
   cursor: pointer;
 }
 
-/* ====== Contenido dividido en dos columnas ====== */
+.clear-button:hover {
+  color: #ff4d4d;
+}
+
+/*  Contenido dividido en dos columnas  */
 .content-container {
   display: flex;
   gap: 20px;
   flex-wrap: wrap;
+  position: relative;
+  align-items: flex-start;
+  background-color: #222;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #333;
 }
 
 .left-column {
@@ -104,7 +113,7 @@
   max-width: 100%;
   height: auto;
   border-radius: 4px;
-  border: 1px solid #EEE;       /* Borde claro */
+  border: 1px solid #EEE;
 }
 
 /* Contenedores de mensajes (Procesando, Errores, etc.) */
@@ -113,15 +122,15 @@
   border-radius: 4px;
   margin: 20px 0;
   text-align: center;
-  background-color: #222;        /* Fondo oscuro para cajas */
-  color: #EEE;                   /* Texto claro */
-  border: 1px solid #EEE;        /* Borde claro */
+  background-color: #222;
+  color: #EEE;
+  border: 1px solid #EEE;
 }
 
 /* Título de la descripción de la imagen */
 .description-title {
   margin-top: 0;
-  color: #EEE;                   /* Título claro */
+  color: #EEE;
 }
 
 /* Controles (VoiceReader, etc.) */
@@ -135,6 +144,18 @@
 .save-message {
   margin-top: 10px;
   text-align: center;
-  color: #EEE;                   /* Texto claro */
+  color: #EEE;
   font-weight: bold;
+}
+
+/* Centrado completo de la app */
+.app-outer-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  width: 100%;
+  background-color: #111;
+  padding: 20px;
+  box-sizing: border-box;
 }

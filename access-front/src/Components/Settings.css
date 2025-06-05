@@ -71,6 +71,11 @@
   grid-template-columns: 120px auto auto;
 }
 
+.select-scrollable {
+  max-height: 150px;
+  overflow-y: auto;
+}
+
 /* ---------------------------------------------------
    Fila de “Texto de prueba” en la pestaña Texto Plano
    - 120px para la etiqueta

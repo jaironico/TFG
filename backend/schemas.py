@@ -7,6 +7,7 @@ from typing import Optional
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6)
+    is_admin: Optional[int] = bool
 
 class Token(BaseModel):
     access_token: str
@@ -21,6 +22,7 @@ class TokenData(BaseModel):
 class UserOut(BaseModel):
     id: int
     username: str
+    is_admin: int
 
     class Config:
         orm_mode = True
@@ -32,6 +34,7 @@ class UserSettingsBase(BaseModel):
     background_color: str = "#ffffff"
     rate: str = "1"
     pitch: str = "1"
+    volume: str = "1"
 
 class UserSettingsCreate(UserSettingsBase):
     pass
