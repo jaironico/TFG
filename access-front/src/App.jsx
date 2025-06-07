@@ -144,7 +144,7 @@ function App() {
       const res = await fetch(`${API_BASE}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username, password, is_admin: 0 })
       });
 
       if (!res.ok) {
