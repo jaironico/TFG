@@ -1,12 +1,12 @@
 // src/App.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import Login from './Components/Auth/login';
-import Register from './Components/Auth/Register';
-import Admin from './Components/Admin';
-import { FileUploader } from './Components/FileUploader';
-import TextEditor from './Components/TextEditor';
-import VoiceReader from './Components/VoiceReader';
-import Settings from './Components/Settings';
+import Login from './Components/Auth/Login.jsx';
+import Register from './Components/Auth/Register.jsx';
+import Admin from './Components/Admin.jsx';
+import { FileUploader } from './Components/FileUploader.jsx';
+import TextEditor from './Components/TextEditor.jsx';
+import VoiceReader from './Components/VoiceReader.jsx';
+import Settings from './Components/Settings.jsx';
 
 import './index.css';
 import './App.css';
