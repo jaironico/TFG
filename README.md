@@ -84,6 +84,7 @@ docker system prune -a
 
 ## Url producción
 http://35.180.29.216:5173
+http://docuaccesible.mooo.com
 
 ## 🧑‍💻 Autor
 
