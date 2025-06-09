@@ -15,12 +15,6 @@ build/
 *.pyo
 *.pyd
 
-# Base de datos SQLite
-*.sqlite3
-*.sqlite3-journal   # <--- ignorar también el journal de SQLite
-*.db
-BBDD/
-
 # Variables de entorno
 *.env                # sigues ignorando todos los .env
 !*.env.example       # pero permitimos versionar .env.example
