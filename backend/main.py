@@ -9,7 +9,6 @@ from typing import Dict, Optional, Tuple, List
 
 from fastapi import FastAPI, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
 from PIL import Image
 import magic
 import pytesseract
@@ -17,10 +16,10 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-# Importaciones para usuarios / ajustes
-from database import engine, SessionLocal
-import models, schemas
-from auth import router as auth_router, get_current_user, get_db
+# Importaciones para usuarios / ajustes (YA SIN SQLAlchemy)
+from database import get_db
+import schemas
+from auth import router as auth_router, get_current_user
 
 # --------------------------------------------------
 # Cargar configuración desde .env
@@ -99,29 +98,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# --------------------------------------------------
-# Crear tablas
-# --------------------------------------------------
-models.Base.metadata.create_all(bind=engine)
-
-# Crear usuario admin si no existe
-from auth import get_password_hash
-from models import User
-
-db = SessionLocal()
-existing_admin = db.query(User).filter(User.username == "adminadmin").first()
-if not existing_admin:
-    admin_user = User(
-        username="adminadmin",
-        hashed_password=get_password_hash("adminadmin"),
-        is_admin=1
-    )
-    db.add(admin_user)
-    db.commit()
-    print("Usuario admin creado")
-else:
-    print("Usuario admin ya existe")
 
 # --------------------------------------------------
 # Caché con TTL
@@ -325,92 +301,108 @@ async def get_api_status():
 app.include_router(auth_router)
 
 @app.get("/me", response_model=schemas.UserOut)
-def get_me(current_user: models.User = Depends(get_current_user)):
-    return current_user
+def get_me(current_user: dict = Depends(get_current_user)):
+    # current_user es dict devuelto por psycopg2, compatible con schemas
+    return {
+        "id": current_user["id"],
+        "username": current_user["username"],
+        "is_admin": current_user["is_admin"]
+    }
 
 @app.get("/me/settings", response_model=schemas.UserSettingsOut)
-def read_my_settings(
-    current_user: models.User = Depends(get_current_user),
-    db: Session                = Depends(get_db)
-):
-    settings = (
-        db.query(models.UserSettings)
-          .filter(models.UserSettings.user_id == current_user.id)
-          .first()
-    )
-    if not settings:
-        raise HTTPException(status_code=404, detail="No se encontraron ajustes para este usuario")
-    return settings
+def read_my_settings(current_user: dict = Depends(get_current_user), db=Depends(get_db)):
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM user_settings WHERE user_id = %s", (current_user["id"],))
+        settings = cur.fetchone()
+        if not settings:
+            raise HTTPException(status_code=404, detail="No se encontraron ajustes para este usuario")
+        return settings
 
 @app.put("/me/settings", response_model=schemas.UserSettingsOut)
 def update_my_settings(
     settings_in: schemas.UserSettingsUpdate,
-    current_user: models.User = Depends(get_current_user),
-    db: Session                = Depends(get_db)
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db)
 ):
-    settings = (
-        db.query(models.UserSettings)
-          .filter(models.UserSettings.user_id == current_user.id)
-          .first()
-    )
-    if not settings:
-        settings = models.UserSettings(
-            user_id=current_user.id,
-            font_size=settings_in.font_size,
-            font_family=settings_in.font_family,
-            text_color=settings_in.text_color,
-            background_color=settings_in.background_color,
-            rate=settings_in.rate,
-            pitch=settings_in.pitch,
-        )
-        db.add(settings)
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM user_settings WHERE user_id = %s", (current_user["id"],))
+        settings = cur.fetchone()
+        if not settings:
+            cur.execute("""
+                INSERT INTO user_settings 
+                    (user_id, font_size, font_family, text_color, background_color, rate, pitch, volume)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+            """, (
+                current_user["id"], settings_in.font_size, settings_in.font_family,
+                settings_in.text_color, settings_in.background_color,
+                settings_in.rate, settings_in.pitch, settings_in.volume
+            ))
+            db.commit()
+            return cur.fetchone()
+        cur.execute("""
+            UPDATE user_settings SET
+                font_size=%s, font_family=%s, text_color=%s, background_color=%s,
+                rate=%s, pitch=%s, volume=%s
+            WHERE user_id=%s
+            RETURNING *
+        """, (
+            settings_in.font_size, settings_in.font_family, settings_in.text_color, settings_in.background_color,
+            settings_in.rate, settings_in.pitch, settings_in.volume,
+            current_user["id"]
+        ))
         db.commit()
-        db.refresh(settings)
-        return settings
-
-    settings.font_size        = settings_in.font_size
-    settings.font_family      = settings_in.font_family
-    settings.text_color       = settings_in.text_color
-    settings.background_color = settings_in.background_color
-    settings.rate             = settings_in.rate
-    settings.pitch            = settings_in.pitch
-
-    db.commit()
-    db.refresh(settings)
-    return settings
+        return cur.fetchone()
 
 @app.get("/admin/users", response_model=List[schemas.UserOut])
 def get_all_users(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db)
 ):
-    if current_user.is_admin != 1:
+    if current_user["is_admin"] != 1:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
-    return db.query(models.User).all()
+    with db.cursor() as cur:
+        cur.execute("SELECT id, username, is_admin FROM users")
+        return cur.fetchall()
 
 @app.delete("/admin/users/{user_id}")
 def delete_user(
     user_id: int,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db)
 ):
-    if current_user.is_admin != 1:
+    if current_user["is_admin"] != 1:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    db.delete(user)
-    db.commit()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM user_settings WHERE user_id = %s", (user_id,))
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        db.commit()
     return {"message": "Usuario eliminado"}
+
+# --------------------------------------------------
+# Health check endpoint
+# --------------------------------------------------
+@app.get("/health")
+def health_check(db = Depends(get_db)):
+    try:
+        with db.cursor() as cur:
+            cur.execute("SELECT 1")
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "gemini_available": gemini_model is not None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
 
 # --------------------------------------------------
 # Endpoint raíz
 # --------------------------------------------------
 @app.get("/")
 def read_root():
-    return {"message": "¡API corriendo correctamente!"}
+    return {"message": "¡API corriendo correctamente con PostgreSQL!"}
 
 # --------------------------------------------------
 # Arranque

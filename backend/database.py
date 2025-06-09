@@ -1,18 +1,16 @@
-# database.py
 import os
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
 
-# Ruta de tu archivo SQLite (puede estar en la carpeta backend/)
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./db.sqlite3")
+load_dotenv()
 
-# create_engine y SessionLocal para SQLAlchemy
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}  # SQLite requiere esto
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password123@localhost:5432/myapp")
 
-# Base class para los modelos
-Base = declarative_base()
+# Dependency para FastAPI (yield, así puedes usarlo con Depends)
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    try:
+        yield conn
+    finally:
+        conn.close()

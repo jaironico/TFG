@@ -14,7 +14,6 @@ export default function TextEditor({ text, textSettings }) {
 
   return (
     <div
-      contentEditable
       aria-label="Editor de texto"
       role="textbox"
       tabIndex={0}

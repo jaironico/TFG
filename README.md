@@ -77,8 +77,10 @@ docker system prune -a
 # Para devs
     docker build -t jaironico/fastapi-backend ./backend
     docker push jaironico/fastapi-backend
-    docker build -t jaironico/react-frontend ./frontend
+    docker build -t jaironico/react-frontend ./access-front
     docker push jaironico/react-frontend
+    docker build -t jaironico/bbdd ./backend/BBDD
+    docker push jaironico/bbdd
 
 ## 🧑‍💻 Autor
 

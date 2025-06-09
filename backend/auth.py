@@ -1,4 +1,3 @@
-# auth.py
 import os
 from datetime import datetime, timedelta
 from typing import Optional
@@ -7,62 +6,51 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
-import models, schemas
-from database import SessionLocal, engine
+import schemas
+from database import get_db
 
-# ------------------------------------------------
-# 1) Configuración de hashing y JWT
-# ------------------------------------------------
-SECRET_KEY = os.getenv("SECRET_KEY", "illustrious-secret-key")  
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-key-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # Token válido 24 horas
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-# ------------------------------------------------
-# 2) Dependency: obtener BD session
-# ------------------------------------------------
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# ------------------------------------------------
-# 3) Funciones auxiliares para usuarios
-# ------------------------------------------------
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
-def get_user_by_username(db: Session, username: str) -> Optional[models.User]:
-    return db.query(models.User).filter(models.User.username == username).first()
+def get_user_by_username(db, username: str):
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+        return cur.fetchone()
 
-def create_user(db: Session, user_in: schemas.UserCreate) -> models.User:
+def create_user(db, user_in: schemas.UserCreate):
     hashed_pw = get_password_hash(user_in.password)
-    new_user = models.User(
-        username=user_in.username,
-        hashed_password=hashed_pw,
-        is_admin=getattr(user_in, "is_admin", 0)
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    # Crear registro inicial de UserSettings:
-    default_settings = models.UserSettings(user_id=new_user.id)
-    db.add(default_settings)
-    db.commit() 
-    return new_user
+    with db.cursor() as cur:
+        # Crear usuario
+        cur.execute(
+            "INSERT INTO users (username, hashed_password, is_admin) VALUES (%s, %s, %s) RETURNING id, username, is_admin",
+            (user_in.username, hashed_pw, int(getattr(user_in, "is_admin", 0)))
+        )
+        user = cur.fetchone()
+        # Crear ajustes por defecto
+        cur.execute(
+            "INSERT INTO user_settings (user_id) VALUES (%s)",
+            (user["id"],)
+        )
+        db.commit()
+        return user
 
-def authenticate_user(db: Session, username: str, password: str) -> Optional[models.User]:
+def authenticate_user(db, username: str, password: str):
     user = get_user_by_username(db, username)
-    if not user or not verify_password(password, user.hashed_password):
+    if not user or not verify_password(password, user['hashed_password']):
         return None
     return user
 
@@ -72,13 +60,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     payload.update({"exp": expire})
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-# ------------------------------------------------
-# 4) Obtener usuario actual a partir del token
-# ------------------------------------------------
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
-) -> models.User:
+async def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="No se pudo validar las credenciales",
@@ -98,13 +80,10 @@ async def get_current_user(
         raise credentials_exception
     return user
 
-# ------------------------------------------------
-# 5) Router de autenticación
-# ------------------------------------------------
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=schemas.UserOut, status_code=201)
-def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
+def register(user_in: schemas.UserCreate, db=Depends(get_db)):
     existing = get_user_by_username(db, user_in.username)
     if existing:
         raise HTTPException(status_code=400, detail="El usuario ya existe")
@@ -114,7 +93,7 @@ def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=schemas.Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
+    db=Depends(get_db)
 ):
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
@@ -123,7 +102,5 @@ def login(
             detail="Usuario o contraseña inválidos",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token = create_access_token(
-        data={"sub": user.username}
-    )
+    access_token = create_access_token(data={"sub": user['username']})
     return {"access_token": access_token, "token_type": "bearer"}

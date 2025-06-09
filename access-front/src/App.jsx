@@ -408,6 +408,7 @@ function App() {
                     <p>✋ Esta es una versión sin revisar, podría contener errores</p>
                   </div>
                 )}
+                <h3 className="description-title">Transcripción</h3>
                 <TextEditor
                   text={documentState.text}
                   readOnly={documentState.isLoading}
