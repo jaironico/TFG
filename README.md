@@ -82,6 +82,9 @@ docker system prune -a
     docker build -t jaironico/bbdd ./backend/BBDD
     docker push jaironico/bbdd
 
+## Url producción
+http://35.180.29.216:5173
+
 ## 🧑‍💻 Autor
 
 **Jaironico**  
