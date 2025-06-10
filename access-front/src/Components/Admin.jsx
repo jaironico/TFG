@@ -8,10 +8,12 @@ const Admin = () => {
 
   const token = localStorage.getItem("token");
 
+  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const meRes = await fetch("http://localhost:8000/me", {
+        const meRes = await fetch(`${API_BASE}/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const me = await meRes.json();
@@ -21,7 +23,7 @@ const Admin = () => {
         }
         setAdminId(me.id);
 
-        const res = await fetch("http://localhost:8000/admin/users", {
+        const res = await fetch(`${API_BASE}/admin/users`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -40,7 +42,7 @@ const Admin = () => {
   const handleDelete = async (id) => {
     if (!window.confirm("¿Estás seguro de que quieres eliminar este usuario?")) return;
     try {
-      await fetch(`http://localhost:8000/admin/users/${id}`, {
+      await fetch(`${API_BASE}/admin/users/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

@@ -1,8 +1,11 @@
+//src/Utils/api.js
 export async function extractText(file) {
     const formData = new FormData();
     formData.append('file', file);
+
+    const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
   
-    const response = await fetch('http://localhost:8000/upload', {
+    const response = await fetch(`${API_BASE}/upload`, {
       method: 'POST',
       body: formData
     });
